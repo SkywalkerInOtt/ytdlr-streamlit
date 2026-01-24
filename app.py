@@ -3,13 +3,16 @@ import yt_dlp
 import os
 import time
 
-def fetch_video_info(url):
+def fetch_video_info(url, client_type='default'):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
+    
+    if client_type != 'default':
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -54,6 +57,14 @@ def main():
         help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
     )
 
+    # Invalidate cache if client changes
+    if "current_client" not in st.session_state:
+        st.session_state.current_client = client_type
+    elif st.session_state.current_client != client_type:
+        st.session_state.current_client = client_type
+        if "video_info" in st.session_state:
+            del st.session_state.video_info
+
     safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
     
     url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
@@ -61,7 +72,7 @@ def main():
     if url:
         if "video_info" not in st.session_state or st.session_state.url != url:
             with st.spinner("Fetching video information..."):
-                info = fetch_video_info(url)
+                info = fetch_video_info(url, client_type)
                 if info:
                     st.session_state.video_info = info
                     st.session_state.url = url
