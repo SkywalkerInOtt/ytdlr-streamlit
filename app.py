@@ -3,15 +3,13 @@ import yt_dlp
 import os
 import time
 
-def fetch_video_info(url, cookies_file=None):
+def fetch_video_info(url):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
-    if cookies_file:
-         ydl_opts['cookiefile'] = cookies_file
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -48,8 +46,7 @@ def main():
     st.markdown("Enter a YouTube URL below to download the video in MP4 format.")
 
     st.sidebar.header("⚙️ Settings")
-    st.sidebar.info("💡 **Tip**: If you see a 403 error, uploading cookies is the most reliable fix.")
-    st.sidebar.markdown("[Get cookies.txt LOCALLY extension](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)")
+    st.sidebar.info("💡 **Tip**: If downloads fail with 403, try changing the **Client Bypass** to 'iOS' or 'Android'.")
     
     client_type = st.sidebar.selectbox(
         "Client Bypass", 
@@ -59,23 +56,12 @@ def main():
 
     safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
     
-    cookies_file = st.sidebar.file_uploader("Upload cookies.txt", type=["txt"])
-    
-    cookies_path = None
-    if cookies_file:
-        # Save cookies to a temporary file in /tmp
-        temp_dir = tempfile.gettempdir()
-        cookies_path = os.path.join(temp_dir, "cookies.txt")
-        with open(cookies_path, "wb") as f:
-            f.write(cookies_file.getbuffer())
-        st.sidebar.success("Cookies loaded!")
-
     url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
 
     if url:
         if "video_info" not in st.session_state or st.session_state.url != url:
             with st.spinner("Fetching video information..."):
-                info = fetch_video_info(url, cookies_path)
+                info = fetch_video_info(url)
                 if info:
                     st.session_state.video_info = info
                     st.session_state.url = url
@@ -134,9 +120,6 @@ def main():
                 else:
                     ydl_opts['format'] = f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]'
                 
-                if cookies_path:
-                    ydl_opts['cookiefile'] = cookies_path
-
                 try:
                     # Clean up if exists
                     if os.path.exists(temp_filename):
@@ -157,13 +140,7 @@ def main():
                         st.error("Download failed: File not created.")
 
                 except Exception as e:
-                    # Check logs for expired cookies warning
-                    expired_cookies = any("cookies are no longer valid" in log for log in logger.logs)
-                    if expired_cookies:
-                        st.error("🚨 **Error: Your cookies are expired!**")
-                        st.warning("YouTube has rejected your `cookies.txt`. Please delete the old file, generate a **fresh** one using the extension, and upload it again.")
-                    else:
-                        st.error(f"Download failed: {e}")
+                    st.error(f"Download failed: {e}")
                     
                     # Log display (Failure)
                     with st.expander("Show specific error logs"):
