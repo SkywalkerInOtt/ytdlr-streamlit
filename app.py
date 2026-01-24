@@ -24,6 +24,19 @@ def fetch_video_info(url, cookies_file=None):
 import shutil
 import tempfile
 
+class MyLogger:
+    def __init__(self):
+        self.logs = []
+
+    def debug(self, msg):
+        self.logs.append(msg)
+
+    def warning(self, msg):
+        self.logs.append(f"WARNING: {msg}")
+
+    def error(self, msg):
+        self.logs.append(f"ERROR: {msg}")
+
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
     
@@ -37,6 +50,13 @@ def main():
     st.sidebar.header("⚙️ Settings")
     st.sidebar.info("💡 **Tip**: If you see a 403 error, uploading cookies is the most reliable fix.")
     st.sidebar.markdown("[Get cookies.txt LOCALLY extension](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)")
+    
+    client_type = st.sidebar.selectbox(
+        "Client Bypass", 
+        ["default", "ios", "android", "web", "tv"],
+        help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
+    )
+
     safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
     
     cookies_file = st.sidebar.file_uploader("Upload cookies.txt", type=["txt"])
@@ -87,6 +107,7 @@ def main():
             resolution = st.selectbox("Select Resolution", sorted_heights, format_func=lambda x: f"{x}p")
 
         if st.button("Download Video"):
+            logger = MyLogger()
             with st.spinner(f"Downloading {resolution} video..."):
                 # Use system temp dir and Video ID for safe filename
                 video_id = info.get('id', 'video')
@@ -101,9 +122,12 @@ def main():
                     'no_warnings': False,
                     'verbose': True,
                     'nocheckcertificate': True,
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'logger': logger,
                     'hls_prefer_native': True, 
                 }
+
+                if client_type != 'default':
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
 
                 if safe_mode:
                     ydl_opts['format'] = 'best[ext=mp4]/best'
@@ -121,15 +145,22 @@ def main():
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([url])
                     
+                    # Log display (Success)
+                    with st.expander("Show Download Logs (for debugging)"):
+                        st.code("\n".join(logger.logs))
+
                     if os.path.exists(temp_filename):
                         st.session_state.downloaded_file = temp_filename
                         st.session_state.final_filename = f"{info['title']}.mp4" 
                         st.success("Video processed successfully!")
                     else:
-                        st.error("Download failed: File not created. Check logs.")
+                        st.error("Download failed: File not created.")
 
                 except Exception as e:
                     st.error(f"Download failed: {e}")
+                    # Log display (Failure)
+                    with st.expander("Show specific error logs"):
+                        st.code("\n".join(logger.logs))
 
         if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
             file_path = st.session_state.downloaded_file
