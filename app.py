@@ -157,7 +157,14 @@ def main():
                         st.error("Download failed: File not created.")
 
                 except Exception as e:
-                    st.error(f"Download failed: {e}")
+                    # Check logs for expired cookies warning
+                    expired_cookies = any("cookies are no longer valid" in log for log in logger.logs)
+                    if expired_cookies:
+                        st.error("🚨 **Error: Your cookies are expired!**")
+                        st.warning("YouTube has rejected your `cookies.txt`. Please delete the old file, generate a **fresh** one using the extension, and upload it again.")
+                    else:
+                        st.error(f"Download failed: {e}")
+                    
                     # Log display (Failure)
                     with st.expander("Show specific error logs"):
                         st.code("\n".join(logger.logs))
