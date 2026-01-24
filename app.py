@@ -37,6 +37,7 @@ def main():
     st.sidebar.header("⚙️ Settings")
     st.sidebar.info("💡 **Tip**: If you see a 403 error, uploading cookies is the most reliable fix.")
     st.sidebar.markdown("[Get cookies.txt LOCALLY extension](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)")
+    safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
     
     cookies_file = st.sidebar.file_uploader("Upload cookies.txt", type=["txt"])
     
@@ -78,10 +79,15 @@ def main():
             return
 
         sorted_heights = sorted(list(available_heights), reverse=True)
-        resolution = st.selectbox("Select Resolution", sorted_heights, format_func=lambda x: f"{x}p")
+        
+        if safe_mode:
+            st.warning("🛡️ Safe Mode enabled. Resolution selection is disabled. Best single file will be downloaded.")
+            resolution = "best"
+        else:
+            resolution = st.selectbox("Select Resolution", sorted_heights, format_func=lambda x: f"{x}p")
 
         if st.button("Download Video"):
-            with st.spinner(f"Downloading {resolution}p video..."):
+            with st.spinner(f"Downloading {resolution} video..."):
                 # Use system temp dir and Video ID for safe filename
                 video_id = info.get('id', 'video')
                 temp_dir = tempfile.gettempdir()
@@ -89,7 +95,6 @@ def main():
                 
                 # Download options
                 ydl_opts = {
-                    'format': f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]',
                     'merge_output_format': 'mp4',
                     'outtmpl': temp_filename,
                     'quiet': False,
@@ -99,6 +104,11 @@ def main():
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'hls_prefer_native': True, 
                 }
+
+                if safe_mode:
+                    ydl_opts['format'] = 'best[ext=mp4]/best'
+                else:
+                    ydl_opts['format'] = f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]'
                 
                 if cookies_path:
                     ydl_opts['cookiefile'] = cookies_path
