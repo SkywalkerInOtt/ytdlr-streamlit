@@ -23,6 +23,7 @@ def fetch_video_info(url, cookies_file=None):
         return None
 
 import shutil
+import tempfile
 
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
@@ -42,10 +43,11 @@ def main():
     
     cookies_path = None
     if cookies_file:
-        # Save cookies to a temporary file
-        with open("cookies.txt", "wb") as f:
+        # Save cookies to a temporary file in /tmp
+        temp_dir = tempfile.gettempdir()
+        cookies_path = os.path.join(temp_dir, "cookies.txt")
+        with open(cookies_path, "wb") as f:
             f.write(cookies_file.getbuffer())
-        cookies_path = "cookies.txt"
         st.sidebar.success("Cookies loaded!")
 
     url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
@@ -81,16 +83,17 @@ def main():
 
         if st.button("Download Video"):
             with st.spinner(f"Downloading {resolution}p video..."):
-                # Use Video ID for safe filename on disk
+                # Use system temp dir and Video ID for safe filename
                 video_id = info.get('id', 'video')
-                temp_filename = f"{video_id}_{resolution}.mp4"
+                temp_dir = tempfile.gettempdir()
+                temp_filename = os.path.join(temp_dir, f"{video_id}_{resolution}.mp4")
                 
                 # Download options
                 ydl_opts = {
                     'format': f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]',
                     'merge_output_format': 'mp4',
                     'outtmpl': temp_filename,
-                    'quiet': False, # Enable logs for debugging
+                    'quiet': False,
                     'no_warnings': False,
                     'verbose': True,
                     'nocheckcertificate': True,
@@ -112,7 +115,7 @@ def main():
                     
                     if os.path.exists(temp_filename):
                         st.session_state.downloaded_file = temp_filename
-                        st.session_state.final_filename = f"{info['title']}.mp4" # Store nice name for button
+                        st.session_state.final_filename = f"{info['title']}.mp4" 
                         st.success("Video processed successfully!")
                     else:
                         st.error("Download failed: File not created. Check logs.")
