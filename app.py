@@ -3,11 +3,16 @@ import yt_dlp
 import os
 import time
 
-def fetch_video_info(url):
+def fetch_video_info(url, cookies_file=None):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
+        'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
+    if cookies_file:
+         ydl_opts['cookiefile'] = cookies_file
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -22,12 +27,23 @@ def main():
     st.title("🎥 YouTube Downloader")
     st.markdown("Enter a YouTube URL below to download the video in MP4 format.")
 
+    st.sidebar.header("⚙️ Settings")
+    cookies_file = st.sidebar.file_uploader("Upload cookies.txt (Fix 403 Errors)", type=["txt"])
+    
+    cookies_path = None
+    if cookies_file:
+        # Save cookies to a temporary file
+        with open("cookies.txt", "wb") as f:
+            f.write(cookies_file.getbuffer())
+        cookies_path = "cookies.txt"
+        st.sidebar.success("Cookies loaded!")
+
     url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
 
     if url:
         if "video_info" not in st.session_state or st.session_state.url != url:
             with st.spinner("Fetching video information..."):
-                info = fetch_video_info(url)
+                info = fetch_video_info(url, cookies_path)
                 if info:
                     st.session_state.video_info = info
                     st.session_state.url = url
@@ -65,7 +81,12 @@ def main():
                     'merge_output_format': 'mp4',
                     'outtmpl': filename,
                     'quiet': True,
+                    'nocheckcertificate': True,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
+                
+                if cookies_path:
+                    ydl_opts['cookiefile'] = cookies_path
 
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
