@@ -1,0 +1,12 @@
+[project]
+name = "ytdlr"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyinstaller>=6.18.0",
+    "streamlit>=1.53.1",
+    "watchdog>=6.0.0",
+    "yt-dlp>=2025.12.8",
+]
