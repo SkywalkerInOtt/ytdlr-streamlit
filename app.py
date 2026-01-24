@@ -22,10 +22,16 @@ def fetch_video_info(url, cookies_file=None):
         st.error(f"Error fetching video info: {e}")
         return None
 
+import shutil
+
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
     
     st.title("🎥 YouTube Downloader")
+    
+    if not shutil.which("ffmpeg"):
+        st.error("⚠️ `ffmpeg` is not installed or not in PATH. Merging video+audio will fail. Please install ffmpeg.")
+
     st.markdown("Enter a YouTube URL below to download the video in MP4 format.")
 
     st.sidebar.header("⚙️ Settings")
@@ -75,16 +81,18 @@ def main():
 
         if st.button("Download Video"):
             with st.spinner(f"Downloading {resolution}p video..."):
-                # Use a unique filename to avoid collisions
-                safe_title = "".join([c for c in info['title'] if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-                filename = f"{safe_title}_{resolution}p.mp4"
+                # Use Video ID for safe filename on disk
+                video_id = info.get('id', 'video')
+                temp_filename = f"{video_id}_{resolution}.mp4"
                 
                 # Download options
                 ydl_opts = {
                     'format': f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]',
                     'merge_output_format': 'mp4',
-                    'outtmpl': filename,
-                    'quiet': True,
+                    'outtmpl': temp_filename,
+                    'quiet': False, # Enable logs for debugging
+                    'no_warnings': False,
+                    'verbose': True,
                     'nocheckcertificate': True,
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     # Bypass options
@@ -95,25 +103,36 @@ def main():
                     ydl_opts['cookiefile'] = cookies_path
 
                 try:
+                    # Clean up if exists
+                    if os.path.exists(temp_filename):
+                        os.remove(temp_filename)
+
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([url])
                     
-                    if os.path.exists(filename):
-                        st.session_state.downloaded_file = filename
+                    if os.path.exists(temp_filename):
+                        st.session_state.downloaded_file = temp_filename
+                        st.session_state.final_filename = f"{info['title']}.mp4" # Store nice name for button
                         st.success("Video processed successfully!")
                     else:
-                        st.error("Download failed: File not created.")
+                        st.error("Download failed: File not created. Check logs.")
 
                 except Exception as e:
                     st.error(f"Download failed: {e}")
 
         if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
-            filename = st.session_state.downloaded_file
-            with open(filename, "rb") as file:
+            file_path = st.session_state.downloaded_file
+            display_name = st.session_state.get('final_filename', 'video.mp4')
+            
+            # Sanitize display name for browser
+            display_name = "".join([c for c in display_name if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
+            if not display_name.endswith('.mp4'): display_name += '.mp4'
+
+            with open(file_path, "rb") as file:
                 st.download_button(
                     label="⬇️ Save to Device",
                     data=file,
-                    file_name=filename,
+                    file_name=display_name,
                     mime="video/mp4"
                 )
 
