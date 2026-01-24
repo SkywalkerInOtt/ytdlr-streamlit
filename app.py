@@ -9,7 +9,6 @@ def fetch_video_info(url, cookies_file=None):
         'no_warnings': True,
         'nocheckcertificate': True,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'force_ipv4': True,
     }
     if cookies_file:
          ydl_opts['cookiefile'] = cookies_file
@@ -98,8 +97,7 @@ def main():
                     'verbose': True,
                     'nocheckcertificate': True,
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    # Bypass options
-                    'force_ipv4': True,
+                    'hls_prefer_native': True, 
                 }
                 
                 if cookies_path:
@@ -138,6 +136,9 @@ def main():
                     file_name=display_name,
                     mime="video/mp4"
                 )
+    
+    st.markdown("---")
+    st.caption(f"yt-dlp version: {yt_dlp.version.__version__}")
 
 if __name__ == "__main__":
     main()
