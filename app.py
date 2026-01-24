@@ -71,28 +71,24 @@ def main():
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([url])
                     
-                    # Serve file
                     if os.path.exists(filename):
-                        with open(filename, "rb") as file:
-                            btn = st.download_button(
-                                label="⬇️ Save to Device",
-                                data=file,
-                                file_name=filename,
-                                mime="video/mp4"
-                            )
-                        if btn:
-                            st.success("Download started!")
-                        
-                        # Cleanup (optional - streamlit re-runs script on interaction so cleanup is tricky. 
-                        # Ideally we'd use tempfile but then we need to ensure it persists for the download button.
-                        # For a simple app, we can leave it or clean up old files periodically. 
-                        # Here we just leave it for the user to download.)
-                        st.success(f"Video processed successfully! Click the button above to save.")
+                        st.session_state.downloaded_file = filename
+                        st.success("Video processed successfully!")
                     else:
                         st.error("Download failed: File not created.")
 
                 except Exception as e:
                     st.error(f"Download failed: {e}")
+
+        if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
+            filename = st.session_state.downloaded_file
+            with open(filename, "rb") as file:
+                st.download_button(
+                    label="⬇️ Save to Device",
+                    data=file,
+                    file_name=filename,
+                    mime="video/mp4"
+                )
 
 if __name__ == "__main__":
     main()
