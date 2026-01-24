@@ -9,6 +9,8 @@ def fetch_video_info(url, cookies_file=None):
         'no_warnings': True,
         'nocheckcertificate': True,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'force_ipv4': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     if cookies_file:
          ydl_opts['cookiefile'] = cookies_file
@@ -28,7 +30,10 @@ def main():
     st.markdown("Enter a YouTube URL below to download the video in MP4 format.")
 
     st.sidebar.header("⚙️ Settings")
-    cookies_file = st.sidebar.file_uploader("Upload cookies.txt (Fix 403 Errors)", type=["txt"])
+    st.sidebar.info("💡 **Tip**: If you see a 403 error, uploading cookies is the most reliable fix.")
+    st.sidebar.markdown("[Get cookies.txt LOCALLY extension](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)")
+    
+    cookies_file = st.sidebar.file_uploader("Upload cookies.txt", type=["txt"])
     
     cookies_path = None
     if cookies_file:
@@ -83,6 +88,9 @@ def main():
                     'quiet': True,
                     'nocheckcertificate': True,
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    # Bypass options
+                    'force_ipv4': True,
+                    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                 }
                 
                 if cookies_path:
