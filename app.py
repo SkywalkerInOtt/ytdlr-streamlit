@@ -54,21 +54,32 @@ def main():
 
     st.sidebar.header("⚙️ Settings")
     
-    st.sidebar.info("💡 **Tip**: If downloads fail with 403, try changing the **Client Bypass** to 'iOS' or 'Android'.")
-    
-    client_type = st.sidebar.selectbox(
-        "Client Bypass", 
-        ["default", "ios", "android", "web", "mweb", "tv"],
-        help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
+    download_mode = st.sidebar.radio(
+        "Download Mode",
+        ["☁️ Cloud Server", "💻 Local Command (Fix 403)"],
+        index=0,
+        help="Use 'Local Command' to generate a code you can run on your own computer to bypass blocking."
     )
+    
+    if download_mode == "☁️ Cloud Server":
+        st.sidebar.info("💡 **Tip**: If downloads fail with 403, try changing the **Client Bypass** to 'iOS' or 'Android'.")
+        
+        client_type = st.sidebar.selectbox(
+            "Client Bypass", 
+            ["default", "ios", "android", "web", "mweb", "tv"],
+            help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
+        )
 
-    # Invalidate cache if client changes
-    if "current_client" not in st.session_state:
-        st.session_state.current_client = client_type
-    elif st.session_state.current_client != client_type:
-        st.session_state.current_client = client_type
-        if "video_info" in st.session_state:
-            del st.session_state.video_info
+        # Invalidate cache if client changes
+        if "current_client" not in st.session_state:
+            st.session_state.current_client = client_type
+        elif st.session_state.current_client != client_type:
+            st.session_state.current_client = client_type
+            if "video_info" in st.session_state:
+                del st.session_state.video_info
+    else:
+        # Local mode defaults
+        client_type = "default" 
 
     safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
     
@@ -108,76 +119,103 @@ def main():
         else:
             resolution = st.selectbox("Select Resolution", sorted_heights, format_func=lambda x: f"{x}p")
 
-        if st.button("Download Video"):
-            logger = MyLogger()
-            with st.spinner(f"Downloading {resolution} video..."):
-                # Use system temp dir and Video ID for safe filename
-                video_id = info.get('id', 'video')
-                temp_dir = tempfile.gettempdir()
-                temp_filename = os.path.join(temp_dir, f"{video_id}_{resolution}.mp4")
-                
-                # Download options
-                ydl_opts = {
-                    'merge_output_format': 'mp4',
-                    'outtmpl': temp_filename,
-                    'quiet': False,
-                    'no_warnings': False,
-                    'verbose': True,
-                    'nocheckcertificate': True,
-                    'logger': logger,
-                    'hls_prefer_native': True, 
-                    'cache_dir': CACHE_DIR,
-                }
-
-                if client_type != 'default':
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
-
-                if safe_mode:
-                    ydl_opts['format'] = 'best[ext=mp4]/best'
-                else:
-                    ydl_opts['format'] = f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]'
-                
-                try:
-                    # Clean up if exists
-                    if os.path.exists(temp_filename):
-                        os.remove(temp_filename)
-
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([url])
-                    
-                    # Log display (Success)
-                    with st.expander("Show Download Logs (for debugging)"):
-                        st.code("\n".join(logger.logs))
-
-                    if os.path.exists(temp_filename):
-                        st.session_state.downloaded_file = temp_filename
-                        st.session_state.final_filename = f"{info['title']}.mp4" 
-                        st.success("Video processed successfully!")
-                    else:
-                        st.error("Download failed: File not created.")
-
-                except Exception as e:
-                    st.error(f"Download failed: {e}")
-                    
-                    # Log display (Failure)
-                    with st.expander("Show specific error logs"):
-                        st.code("\n".join(logger.logs))
-
-        if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
-            file_path = st.session_state.downloaded_file
-            display_name = st.session_state.get('final_filename', 'video.mp4')
+        # --- DOWNLOAD LOGIC ---
+        if download_mode == "💻 Local Command (Fix 403)":
+            st.divider()
+            st.markdown("### 💻 Run this on your computer")
+            st.info("Because standard cloud servers are blocked by YouTube, running this knowing command locally is the 100% fix.")
             
-            # Sanitize display name for browser
-            display_name = "".join([c for c in display_name if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
-            if not display_name.endswith('.mp4'): display_name += '.mp4'
+            # Construct command
+            format_str = f"bestvideo[height={resolution}]+bestaudio/best[height={resolution}]"
+            if safe_mode:
+                 format_str = "best[ext=mp4]/best"
+            
+            # Escape quotes in title for safety (basic)
+            safe_title = info['title'].replace('"', '\\"')
+            filename_template = f"{safe_title}.%(ext)s"
+            
+            cmd = f'yt-dlp "{url}" -f "{format_str}" -o "{filename_template}"'
+            
+            st.code(cmd, language="bash")
+            
+            st.markdown("#### Steps:")
+            st.markdown("1. **Install yt-dlp** (if you haven't):")
+            st.code("pip install yt-dlp", language="bash")
+            st.markdown("2. **Copy the command above** and paste it into your Terminal (Mac/Linux) or PowerShell (Windows).")
+            st.markdown("3. **Success!** The video will download to your current folder.")
+            
+        else:
+            # Cloud Download Mode
+            if st.button("Download Video"):
+                logger = MyLogger()
+                with st.spinner(f"Downloading {resolution} video..."):
+                    # Use system temp dir and Video ID for safe filename
+                    video_id = info.get('id', 'video')
+                    temp_dir = tempfile.gettempdir()
+                    temp_filename = os.path.join(temp_dir, f"{video_id}_{resolution}.mp4")
+                    
+                    # Download options
+                    ydl_opts = {
+                        'merge_output_format': 'mp4',
+                        'outtmpl': temp_filename,
+                        'quiet': False,
+                        'no_warnings': False,
+                        'verbose': True,
+                        'nocheckcertificate': True,
+                        'logger': logger,
+                        'hls_prefer_native': True, 
+                        'cache_dir': CACHE_DIR,
+                    }
 
-            with open(file_path, "rb") as file:
-                st.download_button(
-                    label="⬇️ Save to Device",
-                    data=file,
-                    file_name=display_name,
-                    mime="video/mp4"
-                )
+                    if client_type != 'default':
+                        ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
+
+                    if safe_mode:
+                        ydl_opts['format'] = 'best[ext=mp4]/best'
+                    else:
+                        ydl_opts['format'] = f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]'
+                    
+                    try:
+                        # Clean up if exists
+                        if os.path.exists(temp_filename):
+                            os.remove(temp_filename)
+
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            ydl.download([url])
+                        
+                        # Log display (Success)
+                        with st.expander("Show Download Logs (for debugging)"):
+                            st.code("\n".join(logger.logs))
+
+                        if os.path.exists(temp_filename):
+                            st.session_state.downloaded_file = temp_filename
+                            st.session_state.final_filename = f"{info['title']}.mp4" 
+                            st.success("Video processed successfully!")
+                        else:
+                            st.error("Download failed: File not created.")
+
+                    except Exception as e:
+                        st.error(f"Download failed: {e}")
+                        
+                        # Log display (Failure)
+                        with st.expander("Show specific error logs"):
+                            st.code("\n".join(logger.logs))
+
+            if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
+                file_path = st.session_state.downloaded_file
+                display_name = st.session_state.get('final_filename', 'video.mp4')
+                
+                # Sanitize display name for browser
+                display_name = "".join([c for c in display_name if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
+                if not display_name.endswith('.mp4'): display_name += '.mp4'
+
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="⬇️ Save to Device",
+                        data=file,
+                        file_name=display_name,
+                        mime="video/mp4"
+                    )
     
     st.markdown("---")
     st.caption(f"yt-dlp version: {yt_dlp.version.__version__}")
