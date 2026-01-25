@@ -1,105 +1,10 @@
 import streamlit as st
 import yt_dlp
 import os
-import time
 import shutil
-import tempfile
-import subprocess
-import pickle
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
-# Constants
-DEFAULT_FOLDER_ID = "1OtB4gRxhiA3YvKtOSc_MfFBVdHz4a_28"
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
-
-# --- GOOGLE DRIVE HELPER ---
-def authenticate_google_drive():
-    creds = None
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists('client_secrets.json'):
-                st.error("Error: 'client_secrets.json' not found. Cannot authenticate.")
-                return None
-            flow = InstalledAppFlow.from_client_secrets_file('client_secrets.json', SCOPES)
-            creds = flow.run_local_server(port=8080)
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-    return build('drive', 'v3', credentials=creds)
-
-def upload_file_to_drive(file_path, folder_id):
-    service = authenticate_google_drive()
-    if not service: return None
-    
-    file_metadata = {'name': os.path.basename(file_path), 'parents': [folder_id]}
-    media = MediaFileUpload(file_path, resumable=True)
-    try:
-        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-        return file.get('webViewLink')
-    except Exception as e:
-        st.error(f"Upload failed: {e}")
-        return None
-
-# --- DEMUCS HELPER ---
-def process_vocal_removal(input_path):
-    status_text = st.empty()
-    status_text.text("🎤 Separating vocals... (this may take a few minutes)")
-    
-    try:
-        # Run Demucs
-        subprocess.run(["demucs", "--mp3", "--two-stems=vocals", "-n", "htdemucs", input_path], check=True)
-        
-        filename_no_ext = os.path.splitext(os.path.basename(input_path))[0]
-        demucs_out_dir = os.path.join("separated", "htdemucs", filename_no_ext)
-        
-        # Fallback search
-        if not os.path.exists(demucs_out_dir):
-            potential_dirs = [d for d in os.listdir(os.path.join("separated", "htdemucs")) if d.startswith(filename_no_ext[:10])]
-            if potential_dirs:
-                demucs_out_dir = os.path.join("separated", "htdemucs", potential_dirs[0])
-        
-        no_vocals_path = os.path.join(demucs_out_dir, "no_vocals.mp3")
-        created_files = {}
-
-        if os.path.exists(no_vocals_path):
-            # 1. Instrumental MP3
-            mp3_file = f"{filename_no_ext}_instrumental.mp3"
-            shutil.move(no_vocals_path, mp3_file)
-            created_files['mp3'] = mp3_file
-            
-            # 2. Instrumental MP4
-            status_text.text("🎥 Merging instrumental audio with video...")
-            mp4_file = f"{filename_no_ext}_instrumental.mp4"
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", input_path,
-                "-i", mp3_file,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-map", "0:v:0",
-                "-map", "1:a:0",
-                "-shortest",
-                mp4_file
-            ]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if os.path.exists(mp4_file):
-                created_files['mp4'] = mp4_file
-            
-            status_text.empty()
-            return created_files
-        else:
-            status_text.text("❌ Separation failed: Output not found.")
-            return None
-    except Exception as e:
-        status_text.text(f"❌ Error: {e}")
-        return None
+from utils.drive import upload_file_to_drive, DEFAULT_FOLDER_ID
+from utils.media import process_vocal_removal
 
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
@@ -165,7 +70,14 @@ def main():
                         st.session_state.processed_files = {'original': output_filename}
                         
                         if remove_vocals:
-                            instrumentals = process_vocal_removal(output_filename)
+                            status_text = st.empty()
+                            def progress_callback(msg):
+                                status_text.text(msg)
+                                
+                            instrumentals = process_vocal_removal(output_filename, progress_callback=progress_callback)
+                            
+                            status_text.empty() # Clear status after done
+                            
                             if instrumentals:
                                 if 'mp3' in instrumentals:
                                     st.success(f"✅ Created Instrumental Audio")
@@ -173,6 +85,8 @@ def main():
                                 if 'mp4' in instrumentals:
                                     st.success(f"✅ Created Karaoke Video")
                                     st.session_state.processed_files['instrumental_mp4'] = instrumentals['mp4']
+                            else:
+                                st.error("❌ Vocal removal failed. See logs.")
 
                     except Exception as e:
                         st.error(f"Failed: {e}")
