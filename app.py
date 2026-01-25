@@ -53,7 +53,7 @@ def main():
     
     client_type = st.sidebar.selectbox(
         "Client Bypass", 
-        ["default", "ios", "android", "web", "tv"],
+        ["default", "ios", "android", "web", "mweb", "tv"],
         help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
     )
 
