@@ -55,3 +55,6 @@ coverage.xml
 
 # Streamlit
 .streamlit/
+
+client_secrets.json
+token.pickle
