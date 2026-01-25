@@ -5,220 +5,214 @@ import time
 import shutil
 import tempfile
 import subprocess
-import re
+import pickle
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-CACHE_DIR = "/tmp/yt-dlp-cache"
+# Constants
+DEFAULT_FOLDER_ID = "1OtB4gRxhiA3YvKtOSc_MfFBVdHz4a_28"
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-def fetch_video_info(url, client_type='default'):
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'cache_dir': CACHE_DIR,
-    }
+# --- GOOGLE DRIVE HELPER ---
+def authenticate_google_drive():
+    creds = None
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists('client_secrets.json'):
+                st.error("Error: 'client_secrets.json' not found. Cannot authenticate.")
+                return None
+            flow = InstalledAppFlow.from_client_secrets_file('client_secrets.json', SCOPES)
+            creds = flow.run_local_server(port=8080)
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+    return build('drive', 'v3', credentials=creds)
+
+def upload_file_to_drive(file_path, folder_id):
+    service = authenticate_google_drive()
+    if not service: return None
     
-    if client_type != 'default':
-        ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
-
+    file_metadata = {'name': os.path.basename(file_path), 'parents': [folder_id]}
+    media = MediaFileUpload(file_path, resumable=True)
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-        return info
+        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        return file.get('webViewLink')
     except Exception as e:
-        st.error(f"Error fetching video info: {e}")
+        st.error(f"Upload failed: {e}")
         return None
 
-class MyLogger:
-    def __init__(self):
-        self.logs = []
+# --- DEMUCS HELPER ---
+def process_vocal_removal(input_path):
+    status_text = st.empty()
+    status_text.text("🎤 Separating vocals... (this may take a few minutes)")
+    
+    try:
+        # Run Demucs
+        subprocess.run(["demucs", "--mp3", "--two-stems=vocals", "-n", "htdemucs", input_path], check=True)
+        
+        filename_no_ext = os.path.splitext(os.path.basename(input_path))[0]
+        demucs_out_dir = os.path.join("separated", "htdemucs", filename_no_ext)
+        
+        # Fallback search
+        if not os.path.exists(demucs_out_dir):
+            potential_dirs = [d for d in os.listdir(os.path.join("separated", "htdemucs")) if d.startswith(filename_no_ext[:10])]
+            if potential_dirs:
+                demucs_out_dir = os.path.join("separated", "htdemucs", potential_dirs[0])
+        
+        no_vocals_path = os.path.join(demucs_out_dir, "no_vocals.mp3")
+        created_files = {}
 
-    def debug(self, msg):
-        self.logs.append(msg)
-
-    def warning(self, msg):
-        self.logs.append(f"WARNING: {msg}")
-
-    def error(self, msg):
-        self.logs.append(f"ERROR: {msg}")
+        if os.path.exists(no_vocals_path):
+            # 1. Instrumental MP3
+            mp3_file = f"{filename_no_ext}_instrumental.mp3"
+            shutil.move(no_vocals_path, mp3_file)
+            created_files['mp3'] = mp3_file
+            
+            # 2. Instrumental MP4
+            status_text.text("🎥 Merging instrumental audio with video...")
+            mp4_file = f"{filename_no_ext}_instrumental.mp4"
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", input_path,
+                "-i", mp3_file,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-shortest",
+                mp4_file
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(mp4_file):
+                created_files['mp4'] = mp4_file
+            
+            status_text.empty()
+            return created_files
+        else:
+            status_text.text("❌ Separation failed: Output not found.")
+            return None
+    except Exception as e:
+        status_text.text(f"❌ Error: {e}")
+        return None
 
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
-    
     st.title("🎥 YouTube Downloader")
     
+    # Check dependencies
     if not shutil.which("ffmpeg"):
-        st.error("⚠️ `ffmpeg` is not installed or not in PATH. Merging video+audio will fail. Please install ffmpeg.")
+        st.warning("⚠️ `ffmpeg` not found. Video processing will be limited.")
 
-    st.markdown("Enter a YouTube URL below to download the video in MP4 format.")
-
-    st.sidebar.header("⚙️ Settings")
-    
-    download_mode = st.sidebar.radio(
-        "Download Mode",
-        ["☁️ Cloud Server", "💻 Local Command (Fix 403)"],
-        index=0,
-        help="Use 'Local Command' to generate a code you can run on your own computer to bypass blocking."
-    )
-    
-    if download_mode == "☁️ Cloud Server":
-        st.sidebar.info("💡 **Tip**: If downloads fail with 403, try changing the **Client Bypass** to 'iOS' or 'Android'.")
-        
-        client_type = st.sidebar.selectbox(
-            "Client Bypass", 
-            ["default", "ios", "android", "web", "mweb", "tv"],
-            help="Try changing this if downloads fail. 'ios' or 'android' often bypass restrictions."
-        )
-
-        # Invalidate cache if client changes
-        if "current_client" not in st.session_state:
-            st.session_state.current_client = client_type
-        elif st.session_state.current_client != client_type:
-            st.session_state.current_client = client_type
-            if "video_info" in st.session_state:
-                del st.session_state.video_info
-    else:
-        # Local mode defaults
-        client_type = "default" 
-
-    safe_mode = st.sidebar.checkbox("🛡️ Safe Mode (No Merging)", help="Use this if download fails. Downloads single file (max 720p) without using ffmpeg.")
-    
-    url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
+    # URL Input
+    url = st.text_input("YouTube URL")
 
     if url:
-        if "video_info" not in st.session_state or st.session_state.url != url:
-            with st.spinner("Fetching video information..."):
-                info = fetch_video_info(url, client_type)
-                if info:
-                    st.session_state.video_info = info
-                    st.session_state.url = url
-                else:
-                    if "video_info" in st.session_state:
-                        del st.session_state.video_info
+        if "url" not in st.session_state or st.session_state.url != url:
+            st.session_state.url = url
+            st.session_state.video_info = None
+            st.session_state.processed_files = {}
 
-    if "video_info" in st.session_state:
-        info = st.session_state.video_info
-        st.subheader(info.get('title', 'Unknown Title'))
-        st.image(info.get('thumbnail'), width=300)
+        # Fetch Info
+        if not st.session_state.video_info:
+            with st.spinner("Fetching video info..."):
+                ydl_opts = {'quiet': True, 'no_warnings': True}
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        st.session_state.video_info = info
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-        formats = info.get('formats', [])
-        available_heights = set()
-        for f in formats:
-            if f.get('vcodec') != 'none' and f.get('height'):
-                available_heights.add(f['height'])
-        
-        if not available_heights:
-            st.error("No suitable video formats found.")
-            return
+        if st.session_state.video_info:
+            info = st.session_state.video_info
+            st.subheader(info.get('title', 'Unknown Title'))
+            st.image(info.get('thumbnail'), width=300)
 
-        sorted_heights = sorted(list(available_heights), reverse=True)
-        
-        if safe_mode:
-            st.warning("🛡️ Safe Mode enabled. Resolution selection is disabled. Best single file will be downloaded.")
-            resolution = "best"
-        else:
-            resolution = st.selectbox("Select Resolution", sorted_heights, format_func=lambda x: f"{x}p")
-
-        # --- DOWNLOAD LOGIC ---
-        if download_mode == "💻 Local Command (Fix 403)":
-            st.divider()
-            st.markdown("### 💻 Run this on your computer")
-            st.info("Because standard cloud servers are blocked by YouTube, running this knowing command locally is the 100% fix.")
+            # Resolution Selection
+            formats = info.get('formats', [])
+            heights = sorted(list(set([f['height'] for f in formats if f.get('vcodec')!='none' and f.get('height')])), reverse=True)
+            resolution = st.selectbox("Select Resolution", heights, format_func=lambda x: f"{x}p")
             
-            # Construct command
-            format_str = f"bestvideo[height={resolution}]+bestaudio/best[height={resolution}]"
-            if safe_mode:
-                 format_str = "best[ext=mp4]/best"
+            # Options
+            remove_vocals = st.checkbox("🎵 Create Karaoke (Remove Vocals)")
             
-            # Escape quotes in title for safety (basic)
-            safe_title = info['title'].replace('"', '\\"')
-            filename_template = f"{safe_title}.%(ext)s"
-            
-            cmd = f'yt-dlp "{url}" -f "{format_str}" -o "{filename_template}"'
-            
-            st.code(cmd, language="bash")
-            
-            st.markdown("#### Steps:")
-            st.markdown("1. **Install yt-dlp** (if you haven't):")
-            st.code("pip install yt-dlp", language="bash")
-            st.markdown("2. **Copy the command above** and paste it into your Terminal (Mac/Linux) or PowerShell (Windows).")
-            st.markdown("3. **Success!** The video will download to your current folder.")
-            
-        else:
-            # Cloud Download Mode
-            if st.button("Download Video"):
-                logger = MyLogger()
-                with st.spinner(f"Downloading {resolution} video..."):
-                    # Use system temp dir and Video ID for safe filename
-                    video_id = info.get('id', 'video')
-                    temp_dir = tempfile.gettempdir()
-                    temp_filename = os.path.join(temp_dir, f"{video_id}_{resolution}.mp4")
+            if st.button("Download & Process"):
+                with st.spinner(f"Downloading {resolution}p..."):
+                    safe_title = "".join([c for c in info['title'] if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
+                    output_filename = f"{safe_title}.mp4"
                     
-                    # Download options
-                    ydl_opts = {
+                    ydl_opts_down = {
+                        'format': f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]',
                         'merge_output_format': 'mp4',
-                        'outtmpl': temp_filename,
-                        'quiet': False,
-                        'no_warnings': False,
-                        'verbose': True,
-                        'nocheckcertificate': True,
-                        'logger': logger,
-                        'hls_prefer_native': True, 
-                        'cache_dir': CACHE_DIR,
+                        'outtmpl': output_filename,
+                        'quiet': True,
                     }
-
-                    if client_type != 'default':
-                        ydl_opts['extractor_args'] = {'youtube': {'player_client': [client_type]}}
-
-                    if safe_mode:
-                        ydl_opts['format'] = 'best[ext=mp4]/best'
-                    else:
-                        ydl_opts['format'] = f'bestvideo[height={resolution}]+bestaudio/best[height={resolution}]'
                     
                     try:
-                        # Clean up if exists
-                        if os.path.exists(temp_filename):
-                            os.remove(temp_filename)
-
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # cleanup old
+                        if os.path.exists(output_filename): os.remove(output_filename)
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts_down) as ydl:
                             ydl.download([url])
                         
-                        # Log display (Success)
-                        with st.expander("Show Download Logs (for debugging)"):
-                            st.code("\n".join(logger.logs))
-
-                        if os.path.exists(temp_filename):
-                            st.session_state.downloaded_file = temp_filename
-                            st.session_state.final_filename = f"{info['title']}.mp4" 
-                            st.success("Video processed successfully!")
-                        else:
-                            st.error("Download failed: File not created.")
+                        st.success(f"✅ Downloaded: {output_filename}")
+                        st.session_state.processed_files = {'original': output_filename}
+                        
+                        if remove_vocals:
+                            instrumentals = process_vocal_removal(output_filename)
+                            if instrumentals:
+                                if 'mp3' in instrumentals:
+                                    st.success(f"✅ Created Instrumental Audio")
+                                    st.session_state.processed_files['instrumental_mp3'] = instrumentals['mp3']
+                                if 'mp4' in instrumentals:
+                                    st.success(f"✅ Created Karaoke Video")
+                                    st.session_state.processed_files['instrumental_mp4'] = instrumentals['mp4']
 
                     except Exception as e:
-                        st.error(f"Download failed: {e}")
-                        
-                        # Log display (Failure)
-                        with st.expander("Show specific error logs"):
-                            st.code("\n".join(logger.logs))
+                        st.error(f"Failed: {e}")
 
-            if "downloaded_file" in st.session_state and os.path.exists(st.session_state.downloaded_file):
-                file_path = st.session_state.downloaded_file
-                display_name = st.session_state.get('final_filename', 'video.mp4')
-                
-                # Sanitize display name for browser
-                display_name = "".join([c for c in display_name if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
-                if not display_name.endswith('.mp4'): display_name += '.mp4'
+    # --- RESULT & UPLOAD AREA ---
+    if "processed_files" in st.session_state and st.session_state.processed_files:
+        files = st.session_state.processed_files
+        
+        st.divider()
+        st.subheader("📂 Files Ready")
+        
+        # Download Buttons
+        cols = st.columns(len(files))
+        for i, (key, path) in enumerate(files.items()):
+            with cols[i]:
+                with open(path, "rb") as f:
+                    label = "Original MP4" if key == 'original' else ("Karaoke Video" if key == 'instrumental_mp4' else "Backing Track MP3")
+                    st.download_button(label=f"⬇️ {label}", data=f, file_name=os.path.basename(path))
 
-                with open(file_path, "rb") as file:
-                    st.download_button(
-                        label="⬇️ Save to Device",
-                        data=file,
-                        file_name=display_name,
-                        mime="video/mp4"
-                    )
-    
-    st.markdown("---")
-    st.caption(f"yt-dlp version: {yt_dlp.version.__version__}")
+        st.divider()
+        st.subheader("☁️ Upload to Google Drive")
+        
+        folder_id = st.text_input("Folder ID", value=DEFAULT_FOLDER_ID)
+        
+        # Checkboxes for what to upload
+        files_to_upload = []
+        c1, c2, c3 = st.columns(3)
+        if 'original' in files:
+            if c1.checkbox("Original Video", value=True): files_to_upload.append(files['original'])
+        if 'instrumental_mp4' in files:
+            if c2.checkbox("Karaoke Video", value=True): files_to_upload.append(files['instrumental_mp4'])
+        if 'instrumental_mp3' in files:
+            if c3.checkbox("Backing Track", value=False): files_to_upload.append(files['instrumental_mp3'])
+            
+        if st.button("🚀 Upload Selected"):
+            for f_path in files_to_upload:
+                with st.spinner(f"Uploading {os.path.basename(f_path)}..."):
+                    link = upload_file_to_drive(f_path, folder_id)
+                    if link:
+                        st.success(f"Uploaded! [Link]({link})")
 
 if __name__ == "__main__":
     main()
