@@ -82,11 +82,18 @@ def main():
             
             auth_url = None
             auth_code = None
+            login_logs = []
             
             while True:
                 line = process.stdout.readline()
-                if not line and process.poll() is not None:
-                    break
+                if not line:
+                    if process.poll() is not None:
+                        break
+                    continue
+                
+                login_logs.append(line.strip())
+                st.code(line.strip(), language="text") # Show live logs for debug
+                
                 if line:
                     # Look for: "Go to https://www.google.com/device and enter code ABCD-1234"
                     # pattern varies slightly by version, but usually contains URL and Code
@@ -109,6 +116,8 @@ def main():
             else:
                 status.update(label="❌ Login Failed", state="error")
                 st.sidebar.error("Login process failed or timed out.")
+                with st.sidebar.expander("Show Login Logs"):
+                    st.code("\n".join(login_logs))
 
     if st.session_state.get("authenticated"):
         st.sidebar.success("✅ Authenticated")
