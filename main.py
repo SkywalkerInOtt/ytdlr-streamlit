@@ -171,7 +171,14 @@ def interactive_mode():
         instrumental_files = remove_vocals(outfile)
 
     # --- UPLOAD ---
-    if input("\nCLOUD: Upload to Google Drive? (y/n): ").strip().lower() == 'y':
+    print(f"\nCLOUD: Upload to Google Drive? [Default Folder ID: {DEFAULT_FOLDER_ID}]")
+    upload_input = input("(Press Enter to accept default, type new Folder ID to override, or 'n' to skip): ").strip()
+    
+    if upload_input.lower() not in ['n', 'no']:
+        target_folder = DEFAULT_FOLDER_ID
+        if upload_input and upload_input.lower() not in ['y', 'yes']:
+            target_folder = upload_input
+            
         upload_queue = []
         upload_queue.append(outfile)
         if instrumental_files:
@@ -184,7 +191,7 @@ def interactive_mode():
         
         print(f"\nUploading {len(upload_queue)} files...")
         for f in upload_queue:
-            upload_file(f)
+            upload_file(f, target_folder)
 
 def main():
     parser = argparse.ArgumentParser(description="ytdlr CLI - YouTube Downloader & Processor")
