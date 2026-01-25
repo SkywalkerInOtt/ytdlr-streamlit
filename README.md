@@ -7,9 +7,67 @@ A simple and efficient YouTube video downloader built with **Streamlit** and **y
 - 📥 **Download Videos**: Fetch videos from YouTube in various qualities (e.g., 1080p, 720p).
 - 🎵 **Audio/Video Merge**: Automatically merges high-quality video and audio streams using `ffmpeg`.
 - 🚀 **Streamlit Interface**: Clean and easy-to-use web interface.
-- ☁️ **Cloud Ready**: Configured for easy deployment on Streamlit Cloud.
+- 💻 **CLI Mode**: Terminal-based downloader for quick local use.
+- ☁️ **Google Drive Upload**: (CLI only) Automatically upload downloaded videos to your Google Drive.
 
-## 🛠️ Local Installation
+---
+
+## 🛠️ Usage Options
+
+### Option 1: Web Interface (Streamlit)
+
+Best for visual selection and easy formatting.
+
+1. **Run the app:**
+   ```bash
+   uv run app.py
+   ```
+   *(Or `streamlit run app.py` if installed manually)*
+
+2. Open `http://localhost:8501`.
+3. Paste a URL, select quality, and download.
+
+### Option 2: Command Line (CLI)
+
+Best for automation and **uploading to Google Drive**.
+
+1. **Run the script:**
+   ```bash
+   uv run main.py
+   ```
+
+2. **Google Drive Upload Setup:**
+   - To use the upload feature, you need a `client_secrets.json` file in this folder.
+   - Download "OAuth 2.0 Client IDs" (Desktop App) JSON from [Google Cloud Console](https://console.cloud.google.com/).
+   - Rename it to `client_secrets.json`.
+   - On first run, a browser window will open to authorize access.
+
+---
+
+## 📦 Building a Standalone App
+
+You can package the CLI version into a single executable file (Mac app / Windows .exe) using **PyInstaller**.
+
+1. **Install PyInstaller:**
+   ```bash
+   uv add pyinstaller
+   ```
+   *(Or `pip install pyinstaller`)*
+
+2. **Build the App:**
+   ```bash
+   uv run pyinstaller --onefile --name "ytdlr" main.py
+   ```
+   *(On Mac, this creates a Unix executable. on Windows, an `.exe`)*
+
+3. **Run your App:**
+   - The verified file will be in the `dist/` folder.
+   - You can drag this file anywhere and run it without needing Python installed!
+   - **Note:** Keep `client_secrets.json` in the same folder as the app if you want to use Drive Upload.
+
+---
+
+## 🛠️ Installation Development
 
 1. **Clone the repository:**
    ```bash
@@ -17,41 +75,20 @@ A simple and efficient YouTube video downloader built with **Streamlit** and **y
    cd ytdlr-streamlit
    ```
 
-2. **Set up a virtual environment (optional but recommended):**
+2. **Install dependencies:**
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv sync
    ```
+   *(Or `pip install -r requirements.txt`)*
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Install FFmpeg:**
+3. **Install FFmpeg:**
    - **Mac:** `brew install ffmpeg`
    - **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.
    - **Linux:** `sudo apt install ffmpeg`
-
-5. **Run the app:**
-   ```bash
-   streamlit run app.py
-   ```
-
-## ☁️ Deploy to Streamlit Cloud
-
-This repository is pre-configured for Streamlit Cloud deployment.
-
-1. Go to [share.streamlit.io](https://share.streamlit.io/).
-2. Click **New app**.
-3. Select your repository (`SkywalkerInOtt/ytdlr-streamlit`).
-4. Set **Main file path** to `app.py`.
-5. Click **Deploy**.
-
-> **Note:** The `packages.txt` file handles the installation of `ffmpeg` on Streamlit Cloud automatically.
 
 ## 📝 Technologies Used
 
 - [Streamlit](https://streamlit.io/) - The web framework
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - The downloader engine
 - [FFmpeg](https://ffmpeg.org/) - For media processing
+- [Google Drive API](https://developers.google.com/drive) - For cloud uploads
