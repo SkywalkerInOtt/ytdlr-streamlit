@@ -20,7 +20,7 @@ Best for visual selection and easy formatting.
 
 1. **Run the app:**
    ```bash
-   uv run app.py
+   uv run streamlit run app.py
    ```
    *(Or `streamlit run app.py` if installed manually)*
 
