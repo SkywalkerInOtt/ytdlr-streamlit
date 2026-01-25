@@ -56,7 +56,7 @@ You can package the CLI version into a single executable file (Mac app / Windows
 
 2. **Build the App:**
    ```bash
-   uv run pyinstaller --onefile --name "ytdlr" main.py
+   uv run python -m PyInstaller --onefile --name "ytdlr" main.py
    ```
    *(On Mac, this creates a Unix executable. on Windows, an `.exe`)*
 
