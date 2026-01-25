@@ -58,3 +58,6 @@ coverage.xml
 
 client_secrets.json
 token.pickle
+
+*.mp4
+*.mp3

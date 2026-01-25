@@ -31,12 +31,28 @@ Best for visual selection and easy formatting.
 
 Best for automation and **uploading to Google Drive**.
 
-1. **Run the script:**
+1. **Interactive Mode (Wizard):**
    ```bash
    uv run main.py
    ```
 
-2. **Google Drive Upload Setup:**
+2. **Automated Mode (Flags):**
+   - **Download Only:**
+     ```bash
+     uv run main.py --download "https://youtu.be/..."
+     ```
+   - **Remove Vocals (Create Karaoke):**
+     ```bash
+     uv run main.py --instrumental "my_video.mp4"
+     ```
+     *(Generates both MP3 and MP4 instrumental versions)*
+   - **Upload to Google Drive:**
+     ```bash
+     uv run main.py --upload "my_video.mp4"
+     ```
+     *(Optional: Specify folder with `--folder "FOLDER_ID"`)*
+
+3. **Google Drive Upload Setup:**
    - To use the upload feature, you need a `client_secrets.json` file in this folder.
    - Download "OAuth 2.0 Client IDs" (Desktop App) JSON from [Google Cloud Console](https://console.cloud.google.com/).
    - Rename it to `client_secrets.json`.
