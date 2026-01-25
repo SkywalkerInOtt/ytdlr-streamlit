@@ -48,16 +48,13 @@ def remove_vocals(input_path):
     print("\n🎤 separating vocals... (this may take a few minutes)")
     try:
         # Run Demucs: separate into 2 stems (vocals, no_vocals)
-        # Output defaults to ./separated/htdemucs/<track_name>/
         subprocess.run(["demucs", "--mp3", "--two-stems=vocals", "-n", "htdemucs", input_path], check=True)
         
         # Determine output path
-        # Demucs removes extensions and some chars for folder name usually
-        # But reliable way is to check the folder
         filename_no_ext = os.path.splitext(os.path.basename(input_path))[0]
         demucs_out_dir = os.path.join("separated", "htdemucs", filename_no_ext)
         
-        # Fallback search if exact name match fails (demucs sanitization)
+        # Fallback search if exact name match fails
         if not os.path.exists(demucs_out_dir):
             potential_dirs = [d for d in os.listdir(os.path.join("separated", "htdemucs")) if d.startswith(filename_no_ext[:10])]
             if potential_dirs:
@@ -65,11 +62,36 @@ def remove_vocals(input_path):
         
         no_vocals_path = os.path.join(demucs_out_dir, "no_vocals.mp3")
         
+        created_files = {}
+
         if os.path.exists(no_vocals_path):
-            new_file = f"{filename_no_ext}_instrumental.mp3"
-            shutil.move(no_vocals_path, new_file)
-            print(f"✅ Vocal Removal Complete: {new_file}")
-            return new_file
+            # 1. Instrumental MP3
+            mp3_file = f"{filename_no_ext}_instrumental.mp3"
+            shutil.move(no_vocals_path, mp3_file)
+            print(f"✅ Created Instrumental Audio: {mp3_file}")
+            created_files['mp3'] = mp3_file
+            
+            # 2. Instrumental MP4 (Video + Instrumental Audio)
+            print("🎥 Merging instrumental audio with video...")
+            mp4_file = f"{filename_no_ext}_instrumental.mp4"
+            # ffmpeg -i video.mp4 -i audio.mp3 -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 output.mp4
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", input_path,        # Original Video
+                "-i", mp3_file,          # Instrumental Audio
+                "-c:v", "copy",          # Copy video stream (fast)
+                "-c:a", "aac",           # Encode audio to AAC
+                "-map", "0:v:0",         # Take video from input 0
+                "-map", "1:a:0",         # Take audio from input 1
+                "-shortest",             # Stop when shortest stream ends
+                mp4_file
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(mp4_file):
+                print(f"✅ Created Karaoke Video:     {mp4_file}")
+                created_files['mp4'] = mp4_file
+            
+            return created_files
         else:
             print("❌ Start separation failed: Could not find output file.")
             return None
@@ -121,23 +143,32 @@ def main():
         print(f"\n✅ Download complete: {output_filename}")
         
         # --- VOCAL REMOVAL ---
-        instrumental_file = None
+        instrumental_files = None
         if input("\n🎵 AI: Remove vocals (create karaoke)? (y/n): ").strip().lower() == 'y':
-            instrumental_file = remove_vocals(output_filename)
+            instrumental_files = remove_vocals(output_filename)
 
         # --- UPLOAD ---
         if input("\nCLOUD: Upload to Google Drive? (y/n): ").strip().lower() == 'y':
-            if instrumental_file:
-                choice = input("Upload (1) Original, (2) Instrumental, or (3) Both? [1]: ").strip()
-                if choice == '2':
-                    upload_file(instrumental_file)
-                elif choice == '3':
-                    upload_file(output_filename)
-                    upload_file(instrumental_file)
-                else:
-                    upload_file(output_filename)
-            else:
-                upload_file(output_filename)
+            upload_queue = []
+            
+            # Original
+            upload_queue.append(output_filename)
+            
+            # Instrumentals
+            if instrumental_files:
+                if 'mp4' in instrumental_files:
+                    if input(f"Upload Karaoke Video ({instrumental_files['mp4']})? (y/n): ").strip().lower() == 'y':
+                        upload_queue.append(instrumental_files['mp4'])
+                if 'mp3' in instrumental_files:
+                    if input(f"Upload Instrumental Audio ({instrumental_files['mp3']})? (y/n): ").strip().lower() == 'y':
+                         upload_queue.append(instrumental_files['mp3'])
+            
+            if not instrumental_files: # If simple download, just upload original without asking implies yes (or already handled by queue init)
+                 pass 
+
+            print(f"\nUploading {len(upload_queue)} files...")
+            for f in upload_queue:
+                upload_file(f)
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
