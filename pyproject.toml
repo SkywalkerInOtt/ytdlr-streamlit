@@ -11,5 +11,7 @@ dependencies = [
     "yt-dlp>=2025.12.8",
     "google-api-python-client>=2.155.0",
     "google-auth-httplib2>=0.2.0",
+    "google-auth-httplib2>=0.2.0",
     "google-auth-oauthlib>=1.2.0",
+    "demucs>=4.0.0",
 ]
