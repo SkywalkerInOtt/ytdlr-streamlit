@@ -15,7 +15,8 @@ def main():
         return
 
     flow = InstalledAppFlow.from_client_secrets_file('client_secrets.json', SCOPES)
-    creds = flow.run_local_server(port=8080)
+    # prompt='consent' forces a refresh token to be returned
+    creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
     
     # Extract relevant data for st.secrets
     secrets_data = {
