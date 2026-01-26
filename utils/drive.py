@@ -31,6 +31,7 @@ def authenticate_google_drive():
                     client_secret=secrets["client_secret"],
                     scopes=secrets["scopes"]
                 )
+                error_details.append(f"Secrets loaded. Creds created. Refresh Token present: {bool(secrets.get('refresh_token'))}")
         else:
              error_details.append("Secrets found but 'google_drive' section missing.")
     except Exception as e:
@@ -47,13 +48,20 @@ def authenticate_google_drive():
                 error_details.append(f"Local Pickle Error: {e}")
     
     # 3. Validation / Refresh
+    if creds:
+         error_details.append(f"Pre-Check: valid={creds.valid}, expired={creds.expired}, has_refresh={bool(creds.refresh_token)}")
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
+                error_details.append("Attempting token refresh...")
                 creds.refresh(Request())
+                error_details.append(f"Refresh complete. Valid={creds.valid}")
             except Exception as e:
                 error_details.append(f"Token Refresh Error: {e}")
                 creds = None
+        elif creds:
+            error_details.append("Creds invalid but refresh skipped (not expired? or no refresh token?)")
 
         # Re-auth flow only if NO valid creds and we are LOCAL (interactive)
         # We cannot run local server in cloud
