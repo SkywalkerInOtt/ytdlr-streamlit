@@ -25,7 +25,27 @@ Best for visual selection and easy formatting.
    *(Or `streamlit run app.py` if installed manually)*
 
 2. Open `http://localhost:8501`.
-3. Paste a URL, select quality, and download.
+3. **Download via YouTube**: Paste a URL, select quality, and download.
+4. **Upload Video**: Switch to the "via Upload" tab to process your own video files.
+
+### ☁️ Setup for Streamlit Cloud
+
+To enable Google Drive uploads on Streamlit Cloud, you need to configure app secrets:
+
+1. **Generate Token Locally**:
+   Run the included helper script in your local environment:
+   ```bash
+   uv run get_drive_token.py
+   ```
+   Follow the browser prompt to authenticate.
+
+2. **Configure Secrets**:
+   - Copy the output starting with `[google_drive]`.
+   - Go to your Streamlit Cloud Dashboard.
+   - Click **Manage App** -> **Settings** -> **Secrets**.
+   - Paste the configuration and save.
+   
+   *Note: Locally, the app will fall back to using `token.pickle` if secrets are not found.*
 
 ### Option 2: Command Line (CLI)
 
