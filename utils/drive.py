@@ -59,29 +59,32 @@ def authenticate_google_drive():
                         pickle.dump(creds, token)
                 except Exception as e:
                     print(f"❌ Local auth failed: {e}")
-                    return None
+                    return None, f"Local Auth Failed: {e}"
             else:
-                return None # Cannot auth in cloud without secrets
+                return None, "No secrets found and cannot run local auth in cloud." # Cannot auth in cloud without secrets
 
     if creds and creds.valid:
-        return build('drive', 'v3', credentials=creds)
-    return None
+        return build('drive', 'v3', credentials=creds), None
+    return None, "Authentication failed. Check logs/secrets."
 
 def upload_file_to_drive(file_path, folder_id=None):
     """
     Uploads a file to Google Drive.
-    Returns the webViewLink if successful, None otherwise.
+    Returns: (webViewLink, error_message)
+        - If success: (link, None)
+        - If failure: (None, error_message)
     """
     target_folder = folder_id if folder_id else DEFAULT_FOLDER_ID
     
-    service = authenticate_google_drive()
-    if not service: return None
+    service, auth_error = authenticate_google_drive()
+    if not service: 
+        return None, f"Auth Error: {auth_error}"
     
     file_metadata = {'name': os.path.basename(file_path), 'parents': [target_folder]}
     media = MediaFileUpload(file_path, resumable=True)
     try:
         file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-        return file.get('webViewLink')
+        return file.get('webViewLink'), None
     except Exception as e:
         print(f"❌ Upload failed: {e}")
-        return None
+        return None, f"Upload API Error: {str(e)}"

@@ -188,9 +188,12 @@ def main():
             else:
                 for f_path in files_to_upload:
                     with st.spinner(f"Uploading {os.path.basename(f_path)}..."):
-                        link = upload_file_to_drive(f_path, folder_id)
+                        link, error = upload_file_to_drive(f_path, folder_id)
                         if link:
                             st.success(f"Uploaded! [Link]({link})")
+                        else:
+                            st.error(f"Failed to upload {os.path.basename(f_path)}: {error}")
 
 if __name__ == "__main__":
     main()
+```
