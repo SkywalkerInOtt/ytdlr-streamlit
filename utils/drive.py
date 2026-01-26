@@ -14,29 +14,37 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 def authenticate_google_drive():
     """Authenticates with Google Drive and returns the service object."""
     creds = None
+    error_details = []
     
     # 1. Try Streamlit Secrets (Cloud / production)
     try:
         if "google_drive" in st.secrets:
             secrets = st.secrets["google_drive"]
-            creds = Credentials(
-                token=None, # access token is transient, we rely on refresh_token
-                refresh_token=secrets["refresh_token"],
-                token_uri=secrets["token_uri"],
-                client_id=secrets["client_id"],
-                client_secret=secrets["client_secret"],
-                scopes=secrets["scopes"]
-            )
-    except Exception:
-        # st.secrets raises an error if no secrets.toml exists locally. 
-        # We catch this to fall back to the local token.pickle method.
+            if str(secrets.get("refresh_token")) == "None":
+                 error_details.append("Secrets Error: 'refresh_token' is None. Please regenerate tokens with force-refresh script.")
+            else:
+                creds = Credentials(
+                    token=None, # access token is transient, we rely on refresh_token
+                    refresh_token=secrets["refresh_token"],
+                    token_uri=secrets["token_uri"],
+                    client_id=secrets["client_id"],
+                    client_secret=secrets["client_secret"],
+                    scopes=secrets["scopes"]
+                )
+        else:
+             error_details.append("Secrets found but 'google_drive' section missing.")
+    except Exception as e:
+        error_details.append(f"Secrets Load Error: {e}")
         creds = None
 
     # 2. Fallback to local 'token.pickle' (Local dev)
     if not creds:
         if os.path.exists('token.pickle'):
-            with open('token.pickle', 'rb') as token:
-                creds = pickle.load(token)
+            try:
+                with open('token.pickle', 'rb') as token:
+                    creds = pickle.load(token)
+            except Exception as e:
+                error_details.append(f"Local Pickle Error: {e}")
     
     # 3. Validation / Refresh
     if not creds or not creds.valid:
@@ -44,7 +52,7 @@ def authenticate_google_drive():
             try:
                 creds.refresh(Request())
             except Exception as e:
-                print(f"❌ Error refreshing token: {e}")
+                error_details.append(f"Token Refresh Error: {e}")
                 creds = None
 
         # Re-auth flow only if NO valid creds and we are LOCAL (interactive)
@@ -58,14 +66,15 @@ def authenticate_google_drive():
                     with open('token.pickle', 'wb') as token:
                         pickle.dump(creds, token)
                 except Exception as e:
-                    print(f"❌ Local auth failed: {e}")
-                    return None, f"Local Auth Failed: {e}"
+                    error_details.append(f"Local Interactive Auth Failed: {e}")
             else:
-                return None, "No secrets found and cannot run local auth in cloud." # Cannot auth in cloud without secrets
+                error_details.append("No valid credentials found. (Interactive auth not available in cloud)")
 
     if creds and creds.valid:
         return build('drive', 'v3', credentials=creds), None
-    return None, "Authentication failed. Check logs/secrets."
+    
+    final_error = " | ".join(error_details) if error_details else "Unknown Auth Error"
+    return None, final_error
 
 def upload_file_to_drive(file_path, folder_id=None):
     """
