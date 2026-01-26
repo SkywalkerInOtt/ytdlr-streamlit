@@ -52,7 +52,7 @@ def authenticate_google_drive():
          error_details.append(f"Pre-Check: valid={creds.valid}, expired={creds.expired}, has_refresh={bool(creds.refresh_token)}")
 
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+        if creds and creds.refresh_token:
             try:
                 error_details.append("Attempting token refresh...")
                 creds.refresh(Request())
