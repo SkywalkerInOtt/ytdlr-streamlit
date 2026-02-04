@@ -81,3 +81,130 @@ def process_vocal_removal(input_path, progress_callback=None):
     except Exception as e:
         log(f"❌ Error removing vocals: {e}")
         return None
+
+def mute_video(input_path, output_path=None):
+    """
+    Removes audio from the video file using ffmpeg.
+    
+    Args:
+        input_path (str): Path to input video.
+        output_path (str, optional): Custom output path. Defaults to *_muted.mp4
+        
+    Returns:
+        str: Path to the muted video, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not os.path.exists(input_path):
+        print(f"❌ Error: File '{input_path}' not found.")
+        return None
+
+    if not output_path:
+        filename_no_ext = os.path.splitext(input_path)[0]
+        output_path = f"{filename_no_ext}_muted.mp4"
+
+    try:
+        # ffmpeg -i input.mp4 -c copy -an output.mp4
+        # -an: No Audio
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", input_path,
+            "-c", "copy",
+            "-an",
+            output_path
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error muting video: {e}")
+        return None
+
+def get_video_duration(input_path):
+    """
+    Returns the duration of the video in seconds using ffprobe.
+    """
+    try:
+        cmd = [
+            "ffprobe", 
+            "-v", "error", 
+            "-show_entries", "format=duration", 
+            "-of", "default=noprint_wrappers=1:nokey=1", 
+            input_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except Exception as e:
+        print(f"❌ Error getting duration: {e}")
+        return None
+
+def loop_video(input_path, target_duration_str):
+    """
+    Loops the input video until it reaches the target duration.
+    
+    Args:
+        input_path (str): Path to input video.
+        target_duration_str (str): Duration string (e.g., "1h", "30m", "10s", or plain seconds).
+        
+    Returns:
+        str: Path to looped video or None.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg/ffprobe not installed.")
+        return None
+        
+    if not os.path.exists(input_path):
+        print(f"❌ Error: File '{input_path}' not found.")
+        return None
+
+    # Parse duration
+    total_seconds = 0
+    try:
+        s = target_duration_str.lower().strip()
+        if s.endswith('h'):
+            total_seconds = float(s[:-1]) * 3600
+        elif s.endswith('m'):
+            total_seconds = float(s[:-1]) * 60
+        elif s.endswith('s'):
+            total_seconds = float(s[:-1])
+        else:
+            total_seconds = float(s)
+    except:
+        print(f"❌ Invalid duration format: {target_duration_str}")
+        return None
+        
+    filename_no_ext = os.path.splitext(input_path)[0]
+    output_path = f"{filename_no_ext}_looped.mp4"
+    
+    current_duration = get_video_duration(input_path)
+    if not current_duration:
+        return None
+        
+    if current_duration >= total_seconds:
+        print(f"⚠️ Video is already longer ({current_duration:.2f}s) than target ({total_seconds:.2f}s).")
+        return input_path
+
+    print(f"🔄 Looping video ({current_duration:.2f}s) to target {total_seconds}s...")
+
+    try:
+        # ffmpeg -stream_loop -1 -i input -t duration -c copy output
+        cmd = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", input_path,
+            "-t", str(total_seconds),
+            "-c", "copy",
+            output_path
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error looping video: {e}")
+        return None

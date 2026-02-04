@@ -4,7 +4,7 @@ import argparse
 import os
 
 from utils.drive import upload_file_to_drive, DEFAULT_FOLDER_ID
-from utils.media import process_vocal_removal
+from utils.media import process_vocal_removal, mute_video, loop_video
 
 def download_video(url, interactive=True):
     print("\nFetching video information...")
@@ -18,23 +18,33 @@ def download_video(url, interactive=True):
     title = info.get('title', 'Unknown')
     print(f"\nTitle: {title}")
     
+    
     target_height = None
     
     if interactive:
         formats = info.get('formats', [])
-        heights = sorted(list(set([f['height'] for f in formats if f.get('vcodec')!='none' and f.get('height')])), reverse=True)
-        print("\nResolutions:")
-        for i, h in enumerate(heights): print(f"{i+1}. {h}p")
-        try:
-            idx = int(input("\nChoose (number): ").strip()) - 1
-            target_height = heights[idx]
-        except:
-            print("Invalid selection."); return None
+        # Filter for videos with height
+        heights = sorted(list(set([f['height'] for f in formats if f.get('height')])), reverse=True)
+        
+        if len(heights) > 1:
+            print("\nResolutions:")
+            for i, h in enumerate(heights): print(f"{i+1}. {h}p")
+            try:
+                idx = int(input("\nChoose (number): ").strip()) - 1
+                target_height = heights[idx]
+            except:
+                print("Invalid selection. Defaulting to best quality.")
+        elif heights:
+            print(f"\nResolution: {heights[0]}p")
+            target_height = heights[0]
+        else:
+            print("\nAuto-selecting best quality (no specific resolutions found)...")
     else:
         print("Auto-selecting best quality (CLI mode)...")
     
     print(f"\nDownloading...")
     safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
+    if not safe_title: safe_title = "video"
     output_filename = f"{safe_title}.mp4"
     
     if target_height:
@@ -59,8 +69,8 @@ def download_video(url, interactive=True):
         return None
 
 def interactive_mode():
-    print("🎥 YouTube Video Downloader (Interactive Mode)")
-    url = input("Enter YouTube Video Link: ").strip()
+    print("🎥 Video Downloader (Interactive Mode)")
+    url = input("Enter Video Link: ").strip()
     if not url: return
 
     outfile = download_video(url, interactive=True)
@@ -71,6 +81,19 @@ def interactive_mode():
     if input("\n🎵 AI: Remove vocals (create karaoke)? (y/n): ").strip().lower() == 'y':
         instrumental_files = process_vocal_removal(outfile)
 
+    # --- MUTE ---
+    muted_file = None
+    if input("\n🔇 Mute video (remove audio)? (y/n): ").strip().lower() == 'y':
+        muted_file = mute_video(outfile)
+        if muted_file: print(f"✅ Muted video created: {muted_file}")
+
+    # --- LOOP ---
+    looped_file = None
+    if input("\n🔄 Loop video? (y/n): ").strip().lower() == 'y':
+        duration = input("Target duration (e.g. 30s, 1m, 1h): ").strip()
+        looped_file = loop_video(outfile, duration)
+        if looped_file: print(f"✅ Looped video created: {looped_file}")
+    
     # --- UPLOAD ---
     print(f"\nCLOUD: Upload to Google Drive? [Default Folder ID: {DEFAULT_FOLDER_ID}]")
     upload_input = input("(Press Enter to accept default, type new Folder ID to override, or 'n' to skip): ").strip()
@@ -90,6 +113,14 @@ def interactive_mode():
                 if input(f"Upload Instrumental Audio ({instrumental_files['mp3']})? (y/n): ").strip().lower() == 'y':
                         upload_queue.append(instrumental_files['mp3'])
         
+        if muted_file:
+            if input(f"Upload Muted Video ({muted_file})? (y/n): ").strip().lower() == 'y':
+                upload_queue.append(muted_file)
+
+        if looped_file:
+            if input(f"Upload Looped Video ({looped_file})? (y/n): ").strip().lower() == 'y':
+                upload_queue.append(looped_file)
+        
         print(f"\nUploading {len(upload_queue)} files...")
         for f in upload_queue:
             print(f"\n🚀 Uploading '{f}' to Google Drive...")
@@ -102,6 +133,9 @@ def main():
     
     parser.add_argument("--download", metavar="URL", help="Download video from URL (auto-selects best quality)")
     parser.add_argument("--instrumental", metavar="FILE", help="Remove vocals from an existing video/audio file")
+    parser.add_argument("--mute", metavar="FILE", help="Mute (remove audio) from a video file")
+    parser.add_argument("--loop", metavar="FILE", help="Loop a video file (requires --duration)")
+    parser.add_argument("--duration", metavar="TIME", help="Target duration for loop (e.g. '1h', '30m')")
     parser.add_argument("--upload", metavar="FILE", help="Upload a file to Google Drive")
     parser.add_argument("--folder", metavar="ID", help="Google Drive Folder ID (for use with --upload)")
 
@@ -122,6 +156,19 @@ def main():
     # 2. Instrumental Mode
     if args.instrumental:
         process_vocal_removal(args.instrumental)
+
+    # 3. Mute Mode
+    if args.mute:
+        muted = mute_video(args.mute)
+        if muted: print(f"✅ Created: {muted}")
+
+    # 4. Loop Mode
+    if args.loop:
+        if not args.duration:
+            print("❌ Error: --loop requires --duration (e.g. --duration '1h')")
+            return
+        looped = loop_video(args.loop, args.duration)
+        if looped: print(f"✅ Created: {looped}")
 
     # 3. Upload Mode
     if args.upload:

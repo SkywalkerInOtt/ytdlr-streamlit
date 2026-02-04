@@ -4,11 +4,21 @@ A simple and efficient YouTube video downloader built with **Streamlit** and **y
 
 ## ✨ Features
 
-- 📥 **Download Videos**: Fetch videos from YouTube in various qualities (e.g., 1080p, 720p).
+- 📥 **Download Videos**: Fetch videos from YouTube, XiaoHongShu, and other platforms supported by `yt-dlp`.
 - 🎵 **Audio/Video Merge**: Automatically merges high-quality video and audio streams using `ffmpeg`.
-- 🚀 **Streamlit Interface**: Clean and easy-to-use web interface.
+- � **Mute Video**: Remove audio tracks from any video file.
+- �🚀 **Streamlit Interface**: Clean and easy-to-use web interface.
 - 💻 **CLI Mode**: Terminal-based downloader for quick local use.
 - ☁️ **Google Drive Upload**: (CLI only) Automatically upload downloaded videos to your Google Drive.
+
+### 🔗 Supported URL Examples
+- **YouTube**: `https://www.youtube.com/watch?v=dQw4w9WgXcQ`
+- **XiaoHongShu (Web)**: `https://www.xiaohongshu.com/explore/675fa24f0000000001029bd5`
+- **XiaoHongShu (Share)**: `http://xhslink.com/U59H0v`
+
+> [!NOTE]
+> XiaoHongShu support depends on `yt-dlp`. If you see "No video formats found", it means `yt-dlp` cannot currently extract the video. Support may break or be restored with `yt-dlp` updates.
+
 
 ---
 
@@ -66,6 +76,14 @@ Best for automation and **uploading to Google Drive**.
      uv run main.py --instrumental "my_video.mp4"
      ```
      *(Generates both MP3 and MP4 instrumental versions)*
+   - **Mute Video (Remove Audio):**
+     ```bash
+     uv run main.py --mute "my_video.mp4"
+     ```
+   - **Loop Video:**
+     ```bash
+     uv run main.py --loop "my_video.mp4" --duration "1h"
+     ```
    - **Upload to Google Drive:**
      ```bash
      uv run main.py --upload "my_video.mp4"
