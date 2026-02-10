@@ -6,7 +6,12 @@ A simple and efficient YouTube video downloader built with **Streamlit** and **y
 
 - 📥 **Download Videos**: Fetch videos from YouTube, XiaoHongShu, and other platforms supported by `yt-dlp`.
 - 🎵 **Audio/Video Merge**: Automatically merges high-quality video and audio streams using `ffmpeg`.
-- � **Mute Video**: Remove audio tracks from any video file.
+- 🎤 **Isolate Vocals**: Remove background noise, music, and instruments to keep only the vocals (creates `*_vocals.mp3`).
+- 🎶 **Remove Vocals**: Create karaoke versions by removing the vocal track (creates `*_instrumental.mp3/mp4`).
+- 🔇 **Mute Video**: Remove all audio from a video file.
+- 🔄 **Loop Video**: Loop a video to a specific duration (e.g., 1 hour for long background videos).
+- 🎛️ **Replace/Mix Audio**: Replace video audio or mix new audio (e.g., background music) into a video.
+- �️ **Image to Video**: Create a 1080p video from a static image and an audio file.
 - �🚀 **Streamlit Interface**: Clean and easy-to-use web interface.
 - 💻 **CLI Mode**: Terminal-based downloader for quick local use.
 - ☁️ **Google Drive Upload**: (CLI only) Automatically upload downloaded videos to your Google Drive.
@@ -84,13 +89,49 @@ Best for automation and **uploading to Google Drive**.
      ```bash
      uv run main.py --loop "my_video.mp4" --duration "1h"
      ```
+   - **Clip Video:**
+     ```bash
+     uv run main.py --clip "my_video.mp4" --start "20s"
+     ```
+     *(Duration is optional. If omitted, clips to the end)*
    - **Upload to Google Drive:**
      ```bash
      uv run main.py --upload "my_video.mp4"
      ```
      *(Optional: Specify folder with `--folder "FOLDER_ID"`)*
 
-3. **Google Drive Upload Setup:**
+### Option 2: Command Line (CLI)
+
+Best for quick downloads or batch jobs.
+
+1. **Standard Download:**
+   ```bash
+   uv run main.py --download "URL"
+   ```
+
+2. **Isolate Vocals (Remove Noise):**
+   ```bash
+   uv run main.py --instrumental "video.mp4"
+   ```
+   *This will create both `video_instrumental.mp3` (music only) and `video_vocals.mp3` (speech/vocals only).*
+
+3. **Replace or Mix Audio:**
+   - **Replace**:
+     ```bash
+     uv run main.py --replace-audio "video.mp4" --audio "new_audio.mp3"
+     ```
+   - **Mix (Merge)**:
+     ```bash
+     uv run main.py --mix-audio "video.mp4" --audio "background.mp3"
+     ```
+
+4. **Image to Video:**
+   - Create a 1080p video from an image and audio:
+     ```bash
+     uv run main.py --image-to-video "image.jpg" --audio "audio.mp3"
+     ```
+
+5. **Google Drive Upload Setup:**
    - To use the upload feature, you need a `client_secrets.json` file in this folder.
    - Download "OAuth 2.0 Client IDs" (Desktop App) JSON from [Google Cloud Console](https://console.cloud.google.com/).
    - Rename it to `client_secrets.json`.

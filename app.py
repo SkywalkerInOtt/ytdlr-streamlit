@@ -5,7 +5,7 @@ import shutil
 import tempfile
 
 from utils.drive import upload_file_to_drive, DEFAULT_FOLDER_ID
-from utils.media import process_vocal_removal, mute_video, loop_video
+from utils.media import process_vocal_removal, mute_video, loop_video, clip_video, replace_audio, mix_audio, image_to_video
 
 def main():
     st.set_page_config(page_title="ytdlr", page_icon="🎥")
@@ -18,7 +18,7 @@ def main():
     if "processed_files" not in st.session_state:
         st.session_state.processed_files = {}
 
-    tab1, tab2 = st.tabs(["🎥 via YouTube", "📤 via Upload"])
+    tab1, tab2, tab3 = st.tabs(["🎥 via YouTube", "📤 via Upload", "🛠️ Tools"])
 
     # --- TAB 1: Download URL ---
     with tab1:
@@ -65,14 +65,22 @@ def main():
                     st.info("Best available quality will be downloaded.")
 
                 # Options
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 remove_vocals_yt = c1.checkbox("🎵 Remove Vocals", key="yt_remove_vocals")
                 mute_video_yt = c2.checkbox("🔇 Mute Video", key="yt_mute_video")
                 loop_video_yt = c3.checkbox("🔄 Loop Video", key="yt_loop_video")
+                clip_video_yt = c4.checkbox("✂️ Clip Video", key="yt_clip_video")
                 
                 target_duration_yt = "1m"
+                clip_start_yt = "0s"
+                clip_duration_yt = "10s"
+
                 if loop_video_yt:
-                    target_duration_yt = st.text_input("Target Duration (e.g., 30s, 1m, 1h)", value="1m", key="yt_duration")
+                    target_duration_yt = st.text_input("Loop Target Duration", value="1m", key="yt_loop_dur")
+                if clip_video_yt:
+                    cc1, cc2 = st.columns(2)
+                    clip_start_yt = cc1.text_input("Start Time (e.g. 10s)", value="0s", key="yt_clip_start")
+                    clip_duration_yt = cc2.text_input("Clip Duration (Empty = End)", value="", key="yt_clip_dur")
                 
                 if st.button("Download & Process", key="yt_process"):
                     with st.spinner(f"Downloading..."):
@@ -112,9 +120,13 @@ def main():
                                 
                                 status_text.empty() # Clear status after done
                                 
+                                if instrumentals:
                                     if 'mp4' in instrumentals:
                                         st.success(f"✅ Created Karaoke Video")
                                         st.session_state.processed_files['instrumental_mp4'] = instrumentals['mp4']
+                                    if 'vocals_mp3' in instrumentals:
+                                        st.success(f"✅ Created Isolated Vocals")
+                                        st.session_state.processed_files['vocals_mp3'] = instrumentals['vocals_mp3']
                                 else:
                                     st.error("❌ Vocal removal failed. See logs.")
 
@@ -135,6 +147,15 @@ def main():
                                         st.session_state.processed_files['looped_mp4'] = looped_file
                                     else:
                                         st.error("❌ Failed to loop video.")
+                            
+                            if clip_video_yt:
+                                with st.spinner(f"Clipping video ({clip_duration_yt} from {clip_start_yt})..."):
+                                    clipped_file = clip_video(output_filename, clip_start_yt, clip_duration_yt)
+                                    if clipped_file:
+                                        st.success("✅ Created Clipped Video")
+                                        st.session_state.processed_files['clipped_mp4'] = clipped_file
+                                    else:
+                                        st.error("❌ Failed to clip video.")
 
                         except Exception as e:
                             st.error(f"Failed: {e}")
@@ -148,14 +169,22 @@ def main():
             st.video(uploaded_file)
             
             # Options
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             remove_vocals_up = c1.checkbox("🎵 Remove Vocals", value=True, key="up_remove_vocals")
             mute_video_up = c2.checkbox("🔇 Mute Video", value=False, key="up_mute_video")
             loop_video_up = c3.checkbox("🔄 Loop Video", value=False, key="up_loop_video")
+            clip_video_up = c4.checkbox("✂️ Clip Video", value=False, key="up_clip_video")
             
             target_duration_up = "1m"
+            clip_start_up = "0s"
+            clip_duration_up = "10s"
+
             if loop_video_up:
-                target_duration_up = st.text_input("Target Duration (e.g., 30s, 1m, 1h)", value="1m", key="up_duration")
+                target_duration_up = st.text_input("Loop Duration", value="1m", key="up_loop_dur")
+            if clip_video_up:
+                cc1, cc2 = st.columns(2)
+                clip_start_up = cc1.text_input("Start Time", value="0s", key="up_clip_start")
+                clip_duration_up = cc2.text_input("Clip Duration (Empty = End)", value="", key="up_clip_dur")
             
             if st.button("Process Uploaded Video", key="up_process"):
                 # Save uploaded file to temp file or local dir
@@ -187,6 +216,9 @@ def main():
                                 if 'mp4' in instrumentals:
                                     st.success(f"✅ Created Karaoke Video")
                                     st.session_state.processed_files['instrumental_mp4'] = instrumentals['mp4']
+                                if 'vocals_mp3' in instrumentals:
+                                    st.success(f"✅ Created Isolated Vocals")
+                                    st.session_state.processed_files['vocals_mp3'] = instrumentals['vocals_mp3']
                             else:
                                 st.error("❌ Vocal removal failed. See logs.")
                         
@@ -207,9 +239,93 @@ def main():
                                     st.session_state.processed_files['looped_mp4'] = looped_file
                                 else:
                                     st.error("❌ Failed to loop video.")
+                        
+                        if clip_video_up:
+                            with st.spinner(f"Clipping video ({clip_duration_up} from {clip_start_up})..."):
+                                clipped_file = clip_video(safe_filename, clip_start_up, clip_duration_up)
+                                if clipped_file:
+                                    st.success("✅ Created Clipped Video")
+                                    st.session_state.processed_files['clipped_mp4'] = clipped_file
+                                else:
+                                    st.error("❌ Failed to clip video.")
                                 
                     except Exception as e:
                         st.error(f"Error processing upload: {e}")
+
+    # --- TAB 3: Tools (Audio Replacement) ---
+    with tab3:
+        st.header("🎵 Replace Video Audio")
+        st.info("Upload a video and an audio file to merge them.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            tool_video = st.file_uploader("1. Upload Video or Image", type=["mp4", "mov", "avi", "mkv", "jpg", "jpeg", "png"], key="tool_vid")
+        with col2:
+            tool_audio = st.file_uploader("2. Upload Audio", type=["mp3", "wav", "m4a"], key="tool_aud")
+            
+        if tool_video and tool_audio:
+            is_image = tool_video.type.startswith('image')
+            
+            modes = []
+            if is_image:
+                 modes = ["Image to Video"]
+            else:
+                 modes = ["Replace Audio", "Mix Audio"]
+            
+            mode = st.radio("Mode", modes, horizontal=True)
+            
+            vol_video = 1.0
+            vol_audio = 1.0
+            
+            if mode == "Mix Audio":
+                c1, c2 = st.columns(2)
+                vol_video = c1.slider("Original Video Volume", 0.0, 2.0, 1.0)
+                vol_audio = c2.slider("Added Audio Volume", 0.0, 2.0, 1.0)
+            
+            if mode == "Image to Video":
+                st.info("Creating a 1080p video from this image.")
+                st.image(tool_video, width=300)
+
+            if st.button(f"🔄 {mode}"):
+                with st.spinner("Processing..."):
+                    try:
+                        # Save files
+                        v_ext = os.path.splitext(tool_video.name)[1]
+                        a_ext = os.path.splitext(tool_audio.name)[1]
+                        v_name = f"temp_vid_{tool_video.name}"
+                        a_name = f"temp_aud_{tool_audio.name}"
+                        
+                        with open(v_name, "wb") as f: f.write(tool_video.getbuffer())
+                        with open(a_name, "wb") as f: f.write(tool_audio.getbuffer())
+                        
+                        output_path = f"processed_{os.path.splitext(tool_video.name)[0]}.mp4"
+                        result = None
+                        key_name = ""
+                        
+                        if mode == "Replace Audio":
+                             result = replace_audio(v_name, a_name, output_path)
+                             key_name = 'replaced_audio_mp4'
+                        elif mode == "Mix Audio":
+                             result = mix_audio(v_name, a_name, output_path, vol_video, vol_audio)
+                             key_name = 'mixed_audio_mp4'
+                        elif mode == "Image to Video":
+                             result = image_to_video(v_name, a_name, output_path)
+                             key_name = 'image_video_mp4'
+                        
+                        if result and os.path.exists(result):
+                            st.success("✅ Success!")
+                            # Initialize if needed
+                            if "processed_files" not in st.session_state:
+                                st.session_state.processed_files = {}
+                            st.session_state.processed_files[key_name] = result
+                            
+                            # Clean up temps
+                            os.remove(v_name)
+                            os.remove(a_name)
+                        else:
+                            st.error(f"Failed to process ({mode}).")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     # --- RESULT & UPLOAD AREA ---
     # This area displays results from EITHER tab, as long as st.session_state.processed_files is populated.
@@ -229,8 +345,13 @@ def main():
                         label = "Original"
                         if key == 'instrumental_mp4': label = "Karaoke Video"
                         elif key == 'instrumental_mp3': label = "Backing Track"
+                        elif key == 'vocals_mp3': label = "Isolated Vocals"
                         elif key == 'muted_mp4': label = "Muted Video"
                         elif key == 'looped_mp4': label = "Looped Video"
+                        elif key == 'clipped_mp4': label = "Clipped Video"
+                        elif key == 'replaced_audio_mp4': label = "Video with New Audio"
+                        elif key == 'mixed_audio_mp4': label = "Video with Mixed Audio"
+                        elif key == 'image_video_mp4': label = "Video from Image"
                         
                         st.download_button(label=f"⬇️ {label}", data=f, file_name=os.path.basename(path))
                 else:
@@ -251,11 +372,26 @@ def main():
         if 'instrumental_mp3' in files and os.path.exists(files['instrumental_mp3']):
             if c3.checkbox("Backing Track", value=False): files_to_upload.append(files['instrumental_mp3'])
         
+        if 'vocals_mp3' in files and os.path.exists(files['vocals_mp3']):
+            if st.checkbox("Isolated Vocals", value=False): files_to_upload.append(files['vocals_mp3'])
+        
         if 'muted_mp4' in files and os.path.exists(files['muted_mp4']):
             if st.checkbox("Muted Video", value=True): files_to_upload.append(files['muted_mp4'])
             
         if 'looped_mp4' in files and os.path.exists(files['looped_mp4']):
             if st.checkbox("Looped Video", value=True): files_to_upload.append(files['looped_mp4'])
+
+        if 'clipped_mp4' in files and os.path.exists(files['clipped_mp4']):
+            if st.checkbox("Clipped Video", value=True): files_to_upload.append(files['clipped_mp4'])
+
+        if 'replaced_audio_mp4' in files and os.path.exists(files['replaced_audio_mp4']):
+            if st.checkbox("Video with New Audio", value=True): files_to_upload.append(files['replaced_audio_mp4'])
+
+        if 'mixed_audio_mp4' in files and os.path.exists(files['mixed_audio_mp4']):
+            if st.checkbox("Video with Mixed Audio", value=True): files_to_upload.append(files['mixed_audio_mp4'])
+
+        if 'image_video_mp4' in files and os.path.exists(files['image_video_mp4']):
+            if st.checkbox("Video from Image", value=True): files_to_upload.append(files['image_video_mp4'])
             
         if st.button("🚀 Upload Selected"):
             if not files_to_upload:

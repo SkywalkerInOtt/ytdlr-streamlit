@@ -43,6 +43,7 @@ def process_vocal_removal(input_path, progress_callback=None):
                 demucs_out_dir = os.path.join("separated", "htdemucs", potential_dirs[0])
         
         no_vocals_path = os.path.join(demucs_out_dir, "no_vocals.mp3")
+        vocals_path = os.path.join(demucs_out_dir, "vocals.mp3")
         created_files = {}
 
         if os.path.exists(no_vocals_path):
@@ -51,6 +52,13 @@ def process_vocal_removal(input_path, progress_callback=None):
             shutil.move(no_vocals_path, mp3_file)
             log(f"✅ Created Instrumental Audio: {mp3_file}")
             created_files['mp3'] = mp3_file
+
+            # 2. Isolated Vocals MP3
+            if os.path.exists(vocals_path):
+                vocals_mp3_file = f"{filename_no_ext}_vocals.mp3"
+                shutil.move(vocals_path, vocals_mp3_file)
+                log(f"✅ Created Isolated Vocals: {vocals_mp3_file}")
+                created_files['vocals_mp3'] = vocals_mp3_file
             
             # 2. Instrumental MP4
             if check_ffmpeg_installed():
@@ -207,4 +215,230 @@ def loop_video(input_path, target_duration_str):
         return None
     except Exception as e:
         print(f"❌ Error looping video: {e}")
+        return None
+
+def clip_video(input_path, start_time, duration=None):
+    """
+    Clips the input video from start_time.
+    
+    Args:
+        input_path (str): Path to input video.
+        start_time (str): Start time (e.g., "00:00:10", "10", "10s").
+        duration (str, optional): Duration to keep. If None, clips to end.
+        
+    Returns:
+        str: Path to clipped video or None.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not os.path.exists(input_path):
+        print(f"❌ Error: File '{input_path}' not found.")
+        return None
+        
+    filename_no_ext = os.path.splitext(input_path)[0]
+    output_path = f"{filename_no_ext}_clipped.mp4"
+    
+    msg = f"✂️ Clipping video from {start_time}"
+    if duration:
+        msg += f" for {duration}"
+    else:
+        msg += " to the end"
+    print(f"{msg}...")
+
+    try:
+        # ffmpeg -ss start -i input [-t duration] -c:v libx264 -c:a aac output
+        # Re-encoding is required for accurate seeking (frame-perfect), 
+        # as -c copy snaps to the nearest keyframe.
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start_time),
+            "-i", input_path
+        ]
+        
+        if duration:
+            cmd.extend(["-t", str(duration)])
+            
+        cmd.extend([
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-c:a", "aac",
+            "-avoid_negative_ts", "make_zero",
+            output_path
+        ])
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error clipping video: {e}")
+        return None
+
+def replace_audio(video_path, audio_path, output_path=None):
+    """
+    Replaces the audio track of a video with the specified audio file.
+    
+    Args:
+        video_path (str): Path to the input video.
+        audio_path (str): Path to the new audio file.
+        output_path (str, optional): Path for the output video.
+        
+    Returns:
+        str: Path to the new video file, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not os.path.exists(video_path):
+        print(f"❌ Error: Video file '{video_path}' not found.")
+        return None
+    if not os.path.exists(audio_path):
+        print(f"❌ Error: Audio file '{audio_path}' not found.")
+        return None
+        
+    filename_no_ext = os.path.splitext(video_path)[0]
+    if not output_path:
+        output_path = f"{filename_no_ext}_new_audio.mp4"
+        
+    print(f"🔄 Replacing audio in '{os.path.basename(video_path)}' with '{os.path.basename(audio_path)}'...")
+    
+    try:
+        # ffmpeg -i video -i audio -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest output
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", audio_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-shortest",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            print(f"✅ Created: {output_path}")
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error replacing audio: {e}")
+        return None
+
+def mix_audio(video_path, audio_path, output_path=None, volume_video=1.0, volume_audio=1.0):
+    """
+    Mixes the audio from an audio file into the video, keeping the original video audio.
+    
+    Args:
+        video_path (str): Path to the input video.
+        audio_path (str): Path to the audio file to mix in.
+        output_path (str, optional): Path for the output video.
+        volume_video (float): Volume multiplier for original video audio (default 1.0).
+        volume_audio (float): Volume multiplier for added audio (default 1.0).
+        
+    Returns:
+        str: Path to the new video file, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not os.path.exists(video_path):
+        print(f"❌ Error: Video file '{video_path}' not found.")
+        return None
+    if not os.path.exists(audio_path):
+        print(f"❌ Error: Audio file '{audio_path}' not found.")
+        return None
+        
+    filename_no_ext = os.path.splitext(video_path)[0]
+    if not output_path:
+        output_path = f"{filename_no_ext}_mixed_audio.mp4"
+        
+    print(f"🎛️ Mixing audio into '{os.path.basename(video_path)}'...")
+    
+    try:
+        # ffmpeg -i video -i audio -filter_complex "[0:a]volume=V1[a1];[1:a]volume=V2[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]" -map 0:v -map "[a]" -c:v copy -c:a aac -shortest output
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", audio_path,
+            "-filter_complex", 
+            f"[0:a]volume={volume_video}[a1];[1:a]volume={volume_audio}[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "-map", "0:v",
+            "-map", "[a]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            print(f"✅ Created: {output_path}")
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error mixing audio: {e}")
+        return None
+
+def image_to_video(image_path, audio_path, output_path=None):
+    """
+    Creates a 1080p video from a static image and an audio file.
+    
+    Args:
+        image_path (str): Path to the input image.
+        audio_path (str): Path to the audio file.
+        output_path (str, optional): Path for the output video.
+        
+    Returns:
+        str: Path to the new video file, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not os.path.exists(image_path):
+        print(f"❌ Error: Image file '{image_path}' not found.")
+        return None
+    if not os.path.exists(audio_path):
+        print(f"❌ Error: Audio file '{audio_path}' not found.")
+        return None
+        
+    filename_no_ext = os.path.splitext(image_path)[0]
+    if not output_path:
+        output_path = f"{filename_no_ext}_video.mp4"
+        
+    print(f"🖼️ Creating video from '{os.path.basename(image_path)}' and '{os.path.basename(audio_path)}'...")
+    
+    try:
+        # ffmpeg -loop 1 -i image -i audio -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" output
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", image_path,
+            "-i", audio_path,
+            "-c:v", "libx264",
+            "-tune", "stillimage",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-pix_fmt", "yuv420p",
+            "-shortest",
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path):
+            print(f"✅ Created: {output_path}")
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Error creating video from image: {e}")
         return None
