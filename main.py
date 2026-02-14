@@ -4,7 +4,7 @@ import argparse
 import os
 
 from utils.drive import upload_file_to_drive, DEFAULT_FOLDER_ID
-from utils.media import process_vocal_removal, mute_video, loop_video, clip_video, replace_audio, mix_audio, image_to_video
+from utils.media import process_vocal_removal, mute_video, loop_video, clip_video, replace_audio, mix_audio, image_to_video, images_to_video, slideshow
 
 def download_video(url, interactive=True):
     print("\nFetching video information...")
@@ -157,6 +157,9 @@ def main():
     parser.add_argument("--replace-audio", metavar="VIDEO_FILE", help="Replace audio in a video file (requires --audio)")
     parser.add_argument("--mix-audio", metavar="VIDEO_FILE", help="Mix audio into a video file (requires --audio)")
     parser.add_argument("--image-to-video", metavar="IMAGE_FILE", help="Create a 1080p video from an image and audio (requires --audio)")
+    parser.add_argument("--slideshow", metavar="IMAGE_FOLDER", help="Create a slideshow from images (shows all images once, requires --audio)")
+    parser.add_argument("--images-to-video", metavar="IMAGE_FOLDER", help="Create a video from images (loops to match audio duration, requires --audio)")
+    parser.add_argument("--duration-per-image", metavar="SECONDS", type=float, default=3.0, help="Duration for each image in slideshow (default: 3.0s)")
     parser.add_argument("--audio", metavar="AUDIO_FILE", help="Audio file to use for replacement, mixing, or video generation")
     parser.add_argument("--upload", metavar="FILE", help="Upload a file to Google Drive")
     parser.add_argument("--folder", metavar="ID", help="Google Drive Folder ID (for use with only --upload)")
@@ -223,6 +226,58 @@ def main():
             return
         video_from_image = image_to_video(args.image_to_video, args.audio)
         if video_from_image: print(f"✅ Created: {video_from_image}")
+
+    # 9. Slideshow Mode (shows all images once)
+    if args.slideshow:
+        if not args.audio:
+            print("❌ Error: --slideshow requires --audio")
+            return
+        
+        if not os.path.isdir(args.slideshow):
+            print(f"❌ Error: '{args.slideshow}' is not a directory.")
+            return
+
+        # Collect images
+        image_exts = ('.jpg', '.jpeg', '.png', '.bmp', '.heic')
+        image_paths = sorted([
+            os.path.join(args.slideshow, f) 
+            for f in os.listdir(args.slideshow) 
+            if f.lower().endswith(image_exts)
+        ])
+
+        if not image_paths:
+            print(f"❌ Error: No images found in '{args.slideshow}'.")
+            return
+
+        print(f"📸 Found {len(image_paths)} images.")
+        slideshow_video = slideshow(image_paths, args.audio, args.duration_per_image)
+        if slideshow_video: print(f"✅ Created: {slideshow_video}")
+
+    # 10. Images to Video Mode (loops to match audio duration)
+    if args.images_to_video:
+        if not args.audio:
+            print("❌ Error: --images-to-video requires --audio")
+            return
+        
+        if not os.path.isdir(args.images_to_video):
+            print(f"❌ Error: '{args.images_to_video}' is not a directory.")
+            return
+
+        # Collect images
+        image_exts = ('.jpg', '.jpeg', '.png', '.bmp', '.heic')
+        image_paths = sorted([
+            os.path.join(args.images_to_video, f) 
+            for f in os.listdir(args.images_to_video) 
+            if f.lower().endswith(image_exts)
+        ])
+
+        if not image_paths:
+            print(f"❌ Error: No images found in '{args.images_to_video}'.")
+            return
+
+        print(f"📸 Found {len(image_paths)} images.")
+        slideshow_video = images_to_video(image_paths, args.audio, args.duration_per_image)
+        if slideshow_video: print(f"✅ Created: {slideshow_video}")
 
     # 3. Upload Mode
     if args.upload:

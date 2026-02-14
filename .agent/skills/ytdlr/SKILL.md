@@ -28,6 +28,16 @@ Run commands using `uv run main.py`.
   `uv run main.py --image-to-video "img.jpg" --audio "audio.mp3"`
   Creates 1080p video from image.
 
+- **Slideshow** (shows all images once):
+  `uv run main.py --slideshow "./folder" --audio "audio.mp3" [--duration-per-image 3]`
+  Creates slideshow with Ken Burns effects. Shows each image once.
+  Supports: JPG, PNG, BMP, HEIC
+
+- **Images to Video** (loops to match audio):
+  `uv run main.py --images-to-video "./folder" --audio "audio.mp3" [--duration-per-image 3]`
+  Creates video with Ken Burns effects. Loops images to match full audio duration.
+  Supports: JPG, PNG, BMP, HEIC
+
 - **Mute Video**:
   `uv run main.py --mute "video.mp4"`
   Removes audio from the video.

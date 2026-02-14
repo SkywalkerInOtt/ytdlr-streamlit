@@ -259,15 +259,23 @@ def main():
         
         col1, col2 = st.columns(2)
         with col1:
-            tool_video = st.file_uploader("1. Upload Video or Image", type=["mp4", "mov", "avi", "mkv", "jpg", "jpeg", "png"], key="tool_vid")
+             tool_video = st.file_uploader("1. Upload Video, Image, or Multiple Images", 
+                                          type=["mp4", "mov", "avi", "mkv", "jpg", "jpeg", "png", "bmp"], 
+                                          accept_multiple_files=True,
+                                          key="tool_vid")
         with col2:
             tool_audio = st.file_uploader("2. Upload Audio", type=["mp3", "wav", "m4a"], key="tool_aud")
             
         if tool_video and tool_audio:
-            is_image = tool_video.type.startswith('image')
+            # Determine if input is a list of images or a single file
+            is_multiple = len(tool_video) > 1 if isinstance(tool_video, list) else False
+            first_file = tool_video[0] if isinstance(tool_video, list) else tool_video
+            is_image = first_file.type.startswith('image')
             
             modes = []
-            if is_image:
+            if is_multiple and is_image:
+                 modes = ["Images to Video (Slideshow)"]
+            elif is_image:
                  modes = ["Image to Video"]
             else:
                  modes = ["Replace Audio", "Mix Audio"]
@@ -276,6 +284,7 @@ def main():
             
             vol_video = 1.0
             vol_audio = 1.0
+            duration_per_image = 3.0
             
             if mode == "Mix Audio":
                 c1, c2 = st.columns(2)
@@ -284,46 +293,69 @@ def main():
             
             if mode == "Image to Video":
                 st.info("Creating a 1080p video from this image.")
-                st.image(tool_video, width=300)
+                st.image(first_file, width=300)
+
+            if mode == "Images to Video (Slideshow)":
+                st.info(f"Creating a slideshow from {len(tool_video)} images.")
+                duration_per_image = st.number_input("Duration per Image (seconds)", min_value=0.1, value=3.0, step=0.5)
 
             if st.button(f"🔄 {mode}"):
                 with st.spinner("Processing..."):
                     try:
-                        # Save files
-                        v_ext = os.path.splitext(tool_video.name)[1]
-                        a_ext = os.path.splitext(tool_audio.name)[1]
-                        v_name = f"temp_vid_{tool_video.name}"
+                        # Save audio
                         a_name = f"temp_aud_{tool_audio.name}"
-                        
-                        with open(v_name, "wb") as f: f.write(tool_video.getbuffer())
                         with open(a_name, "wb") as f: f.write(tool_audio.getbuffer())
                         
-                        output_path = f"processed_{os.path.splitext(tool_video.name)[0]}.mp4"
                         result = None
                         key_name = ""
-                        
-                        if mode == "Replace Audio":
-                             result = replace_audio(v_name, a_name, output_path)
-                             key_name = 'replaced_audio_mp4'
-                        elif mode == "Mix Audio":
-                             result = mix_audio(v_name, a_name, output_path, vol_video, vol_audio)
-                             key_name = 'mixed_audio_mp4'
-                        elif mode == "Image to Video":
-                             result = image_to_video(v_name, a_name, output_path)
-                             key_name = 'image_video_mp4'
+                        temp_files = [a_name]
+
+                        if mode == "Images to Video (Slideshow)":
+                            # Save all images
+                            image_paths = []
+                            for img_file in tool_video:
+                                t_name = f"temp_slide_{img_file.name}"
+                                with open(t_name, "wb") as f: f.write(img_file.getbuffer())
+                                image_paths.append(t_name)
+                                temp_files.append(t_name)
+                            
+                            output_path = "processed_slideshow.mp4"
+                            result = images_to_video(image_paths, a_name, duration_per_image, output_path)
+                            key_name = 'slideshow_mp4'
+
+                        else:
+                            # Single video/image handling
+                            v_file = first_file
+                            v_name = f"temp_vid_{v_file.name}"
+                            with open(v_name, "wb") as f: f.write(v_file.getbuffer())
+                            temp_files.append(v_name)
+                            
+                            output_path = f"processed_{os.path.splitext(v_file.name)[0]}.mp4"
+                            
+                            if mode == "Replace Audio":
+                                 result = replace_audio(v_name, a_name, output_path)
+                                 key_name = 'replaced_audio_mp4'
+                            elif mode == "Mix Audio":
+                                 result = mix_audio(v_name, a_name, output_path, vol_video, vol_audio)
+                                 key_name = 'mixed_audio_mp4'
+                            elif mode == "Image to Video":
+                                 result = image_to_video(v_name, a_name, output_path)
+                                 key_name = 'image_video_mp4'
                         
                         if result and os.path.exists(result):
                             st.success("✅ Success!")
-                            # Initialize if needed
                             if "processed_files" not in st.session_state:
                                 st.session_state.processed_files = {}
                             st.session_state.processed_files[key_name] = result
                             
                             # Clean up temps
-                            os.remove(v_name)
-                            os.remove(a_name)
+                            for t in temp_files:
+                                if os.path.exists(t): os.remove(t)
                         else:
                             st.error(f"Failed to process ({mode}).")
+                            for t in temp_files:
+                                if os.path.exists(t): os.remove(t)
+
                     except Exception as e:
                         st.error(f"Error: {e}")
 
@@ -352,6 +384,7 @@ def main():
                         elif key == 'replaced_audio_mp4': label = "Video with New Audio"
                         elif key == 'mixed_audio_mp4': label = "Video with Mixed Audio"
                         elif key == 'image_video_mp4': label = "Video from Image"
+                        elif key == 'slideshow_mp4': label = "Slideshow Video"
                         
                         st.download_button(label=f"⬇️ {label}", data=f, file_name=os.path.basename(path))
                 else:
@@ -392,6 +425,9 @@ def main():
 
         if 'image_video_mp4' in files and os.path.exists(files['image_video_mp4']):
             if st.checkbox("Video from Image", value=True): files_to_upload.append(files['image_video_mp4'])
+
+        if 'slideshow_mp4' in files and os.path.exists(files['slideshow_mp4']):
+            if st.checkbox("Slideshow Video", value=True): files_to_upload.append(files['slideshow_mp4'])
             
         if st.button("🚀 Upload Selected"):
             if not files_to_upload:

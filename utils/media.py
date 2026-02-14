@@ -1,6 +1,12 @@
 import os
 import shutil
 import subprocess
+import random
+from PIL import Image
+from pillow_heif import register_heif_opener
+
+# Register HEIF/HEIC support for PIL
+register_heif_opener()
 
 def check_ffmpeg_installed():
     """Checks if ffmpeg is available in the system path."""
@@ -441,4 +447,442 @@ def image_to_video(image_path, audio_path, output_path=None):
         return None
     except Exception as e:
         print(f"❌ Error creating video from image: {e}")
+        return None
+
+def slideshow(image_paths, audio_path, duration_per_image=3.0, output_path=None):
+    """
+    Creates a 1080p slideshow from a list of images and an audio file with Ken Burns effects.
+    Shows each image exactly once - does not loop to match audio duration.
+    
+    Since ffmpeg's zoompan filter crashes on this system, we generate the Ken Burns effect
+    frames directly in Python using PIL, then encode them with ffmpeg.
+    
+    Args:
+        image_paths (list): List of paths to input images.
+        audio_path (str): Path to the audio file.
+        duration_per_image (float): Duration for each image in seconds.
+        output_path (str, optional): Path for the output video.
+        
+    Returns:
+        str: Path to the new video file, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not image_paths:
+        print("❌ Error: No images provided.")
+        return None
+        
+    if not os.path.exists(audio_path):
+        print(f"❌ Error: Audio file '{audio_path}' not found.")
+        return None
+    
+    # Create temp directory for processing
+    temp_dir = os.path.join(os.path.dirname(image_paths[0]), "temp_slideshow")
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
+    
+    print(f"🖼️ Creating slideshow with Ken Burns effects for {len(image_paths)} images...")
+    
+    try:
+        fps = 30
+        total_frames = int(duration_per_image * fps)
+        output_size = (1920, 1080)
+        
+        # Ken Burns effect types
+        effects = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down']
+        
+        clips = []
+        
+        print(f"🎥 Rendering {len(image_paths)} clips with Python-generated Ken Burns effects...")
+        
+        for img_idx, img_path in enumerate(image_paths):
+            try:
+                # Load and prepare image at high resolution for quality
+                with Image.open(img_path) as img:
+                    img = img.convert('RGB')
+                    
+                    # Upscale to 2560x1440 for better quality when zooming
+                    target_size = (2560, 1440)
+                    ratio = min(target_size[0] / img.width, target_size[1] / img.height)
+                    new_size = (int(img.width * ratio), int(img.height * ratio))
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    
+                    # Center on black background
+                    canvas = Image.new('RGB', target_size, (0, 0, 0))
+                    x = (target_size[0] - new_size[0]) // 2
+                    y = (target_size[1] - new_size[1]) // 2
+                    canvas.paste(img, (x, y))
+                    
+                    # Choose random effect
+                    effect = random.choice(effects)
+                    
+                    # Create frames directory for this clip
+                    frames_dir = os.path.join(temp_dir, f"frames_{img_idx:05d}")
+                    os.makedirs(frames_dir, exist_ok=True)
+                    
+                    # Generate frames with Ken Burns effect
+                    for frame_num in range(total_frames):
+                        t = frame_num / (total_frames - 1)  # 0.0 to 1.0
+                        
+                        if effect == 'zoom_in':
+                            # Zoom from 1.0x to 1.1x (slower, more subtle)
+                            zoom = 1.0 + (0.1 * t)
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'zoom_out':
+                            # Zoom from 1.1x to 1.0x (slower, more subtle)
+                            zoom = 1.1 - (0.1 * t)
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_left':
+                            # Pan from right to left (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = int((target_size[0] - crop_w) * (1 - t))
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_right':
+                            # Pan from left to right (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = int((target_size[0] - crop_w) * t)
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_up':
+                            # Pan from bottom to top (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = int((target_size[1] - crop_h) * (1 - t))
+                            
+                        else:  # pan_down
+                            # Pan from top to bottom (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = int((target_size[1] - crop_h) * t)
+                        
+                        # Crop and resize to output size
+                        cropped = canvas.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+                        frame = cropped.resize(output_size, Image.Resampling.LANCZOS)
+                        
+                        # Save frame
+                        frame_path = os.path.join(frames_dir, f"frame_{frame_num:05d}.jpg")
+                        frame.save(frame_path, "JPEG", quality=95)
+                    
+                    # Encode frames to video clip
+                    clip_path = os.path.join(temp_dir, f"clip_{img_idx:05d}.mp4")
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-framerate", str(fps),
+                        "-i", os.path.join(frames_dir, "frame_%05d.jpg"),
+                        "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p",
+                        "-r", str(fps),
+                        clip_path
+                    ]
+                    
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    if os.path.exists(clip_path):
+                        clips.append(clip_path)
+                    
+                    # Clean up frames
+                    shutil.rmtree(frames_dir)
+                    
+            except Exception as e:
+                print(f"⚠️ Warning: Could not process image {img_path}: {e}")
+
+        if not clips:
+            print("❌ Error: No clips were generated.")
+            return None
+
+        # Concatenate Clips
+        concat_list_path = os.path.join(temp_dir, "concat.txt")
+        with open(concat_list_path, "w") as f:
+            for clip in clips:
+                f.write(f"file '{os.path.basename(clip)}'\n")
+        
+        if not output_path:
+            filename_no_ext = "slideshow"
+            output_path = f"{filename_no_ext}.mp4"
+            
+        print(f"🎞️ Concatenating and mixing audio...")
+        
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_path,
+            "-i", audio_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Clean up temp dir
+        shutil.rmtree(temp_dir)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error creating slideshow: {e}")
+        # Clean up temp dir
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        return None
+
+def images_to_video(image_paths, audio_path, duration_per_image=3.0, output_path=None):
+    """
+    Creates a 1080p video slideshow from a list of images and an audio file with Ken Burns effects.
+    
+    Since ffmpeg's zoompan filter crashes on this system, we generate the Ken Burns effect
+    frames directly in Python using PIL, then encode them with ffmpeg.
+    
+    Args:
+        image_paths (list): List of paths to input images.
+        audio_path (str): Path to the audio file.
+        duration_per_image (float): Duration for each image in seconds.
+        output_path (str, optional): Path for the output video.
+        
+    Returns:
+        str: Path to the new video file, or None if failed.
+    """
+    if not check_ffmpeg_installed():
+        print("❌ Error: FFmpeg not installed.")
+        return None
+        
+    if not image_paths:
+        print("❌ Error: No images provided.")
+        return None
+        
+    if not os.path.exists(audio_path):
+        print(f"❌ Error: Audio file '{audio_path}' not found.")
+        return None
+    
+    # Create temp directory for processing
+    temp_dir = os.path.join(os.path.dirname(image_paths[0]), "temp_slideshow")
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
+    
+    print(f"🖼️ Preparing slideshow with Ken Burns effects for {len(image_paths)} images...")
+    
+    try:
+        # Get audio duration to determine how many times to loop images
+        audio_duration = get_video_duration(audio_path)
+        if not audio_duration:
+            print("⚠️ Warning: Could not determine audio duration. Using images once.")
+            audio_duration = len(image_paths) * duration_per_image
+        
+        # Calculate how many clips we need to fill the audio duration
+        clips_needed = int(audio_duration / duration_per_image) + 1
+        
+        print(f"🔄 Audio duration: {audio_duration:.1f}s - Need {clips_needed} clips at {duration_per_image}s each")
+        
+        fps = 30
+        total_frames = int(duration_per_image * fps)
+        output_size = (1920, 1080)
+        
+        # Ken Burns effect types
+        effects = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down']
+        
+        clips = []
+        failed_images = []
+        
+        print(f"🎥 Rendering clips with Python-generated Ken Burns effects...")
+        
+        # Keep looping through images until we have enough successful clips
+        img_cycle_index = 0
+        clip_count = 0
+        
+        while len(clips) < clips_needed:
+            # Get the next image (cycling through the list)
+            img_path = image_paths[img_cycle_index % len(image_paths)]
+            img_cycle_index += 1
+            
+            # Skip if this image previously failed
+            if img_path in failed_images:
+                continue
+            
+            try:
+                # Load and prepare image at high resolution for quality
+                with Image.open(img_path) as img:
+                    img = img.convert('RGB')
+                    
+                    # Upscale to 2560x1440 for better quality when zooming
+                    target_size = (2560, 1440)
+                    ratio = min(target_size[0] / img.width, target_size[1] / img.height)
+                    new_size = (int(img.width * ratio), int(img.height * ratio))
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    
+                    # Center on black background
+                    canvas = Image.new('RGB', target_size, (0, 0, 0))
+                    x = (target_size[0] - new_size[0]) // 2
+                    y = (target_size[1] - new_size[1]) // 2
+                    canvas.paste(img, (x, y))
+                    
+                    # Choose random effect
+                    effect = random.choice(effects)
+                    
+                    # Create frames directory for this clip
+                    frames_dir = os.path.join(temp_dir, f"frames_{clip_count:05d}")
+                    os.makedirs(frames_dir, exist_ok=True)
+                    
+                    # Generate frames with Ken Burns effect
+                    for frame_num in range(total_frames):
+                        t = frame_num / (total_frames - 1)  # 0.0 to 1.0
+                        
+                        if effect == 'zoom_in':
+                            # Zoom from 1.0x to 1.1x (slower, more subtle)
+                            zoom = 1.0 + (0.1 * t)
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'zoom_out':
+                            # Zoom from 1.1x to 1.0x (slower, more subtle)
+                            zoom = 1.1 - (0.1 * t)
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_left':
+                            # Pan from right to left (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = int((target_size[0] - crop_w) * (1 - t))
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_right':
+                            # Pan from left to right (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = int((target_size[0] - crop_w) * t)
+                            crop_y = (target_size[1] - crop_h) // 2
+                            
+                        elif effect == 'pan_up':
+                            # Pan from bottom to top (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = int((target_size[1] - crop_h) * (1 - t))
+                            
+                        else:  # pan_down
+                            # Pan from top to bottom (slower)
+                            zoom = 1.05
+                            crop_w = int(output_size[0] / zoom)
+                            crop_h = int(output_size[1] / zoom)
+                            crop_x = (target_size[0] - crop_w) // 2
+                            crop_y = int((target_size[1] - crop_h) * t)
+                        
+                        # Crop and resize to output size
+                        cropped = canvas.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+                        frame = cropped.resize(output_size, Image.Resampling.LANCZOS)
+                        
+                        # Save frame
+                        frame_path = os.path.join(frames_dir, f"frame_{frame_num:05d}.jpg")
+                        frame.save(frame_path, "JPEG", quality=95)
+                    
+                    # Encode frames to video clip
+                    clip_path = os.path.join(temp_dir, f"clip_{clip_count:05d}.mp4")
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-framerate", str(fps),
+                        "-i", os.path.join(frames_dir, "frame_%05d.jpg"),
+                        "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p",
+                        "-r", str(fps),
+                        clip_path
+                    ]
+                    
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    if os.path.exists(clip_path):
+                        clips.append(clip_path)
+                        clip_count += 1
+                        print(f"  ✓ Clip {len(clips)}/{clips_needed} rendered")
+                    
+                    # Clean up frames
+                    shutil.rmtree(frames_dir)
+                    
+            except Exception as e:
+                print(f"⚠️ Skipping image {os.path.basename(img_path)}: {e}")
+                failed_images.append(img_path)
+                # If all images have failed, we can't continue
+                if len(failed_images) >= len(image_paths):
+                    print("❌ Error: All images failed to process.")
+                    return None
+
+        if failed_images:
+            print(f"⚠️ Skipped {len(failed_images)} images that could not be processed")
+        
+        print(f"✅ Successfully created {len(clips)} clips")
+
+
+        if not clips:
+            print("❌ Error: No clips were generated.")
+            return None
+
+        # Concatenate Clips
+        concat_list_path = os.path.join(temp_dir, "concat.txt")
+        with open(concat_list_path, "w") as f:
+            for clip in clips:
+                f.write(f"file '{os.path.basename(clip)}'\n")
+        
+        if not output_path:
+            filename_no_ext = "slideshow_effects"
+            output_path = f"{filename_no_ext}.mp4"
+            
+        print(f"🎞️ Concatenating and mixing audio...")
+        
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_path,
+            "-i", audio_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Clean up temp dir
+        shutil.rmtree(temp_dir)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error creating slideshow: {e}")
+        # Clean up temp dir
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return None

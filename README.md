@@ -12,6 +12,7 @@ A simple and efficient YouTube video downloader built with **Streamlit** and **y
 - 🔄 **Loop Video**: Loop a video to a specific duration (e.g., 1 hour for long background videos).
 - 🎛️ **Replace/Mix Audio**: Replace video audio or mix new audio (e.g., background music) into a video.
 - �️ **Image to Video**: Create a 1080p video from a static image and an audio file.
+- 🎞️ **Images to Video (Slideshow)**: Create a video slideshow from a folder of images.
 - �🚀 **Streamlit Interface**: Clean and easy-to-use web interface.
 - 💻 **CLI Mode**: Terminal-based downloader for quick local use.
 - ☁️ **Google Drive Upload**: (CLI only) Automatically upload downloaded videos to your Google Drive.
@@ -131,7 +132,21 @@ Best for quick downloads or batch jobs.
      uv run main.py --image-to-video "image.jpg" --audio "audio.mp3"
      ```
 
-5. **Google Drive Upload Setup:**
+5. **Slideshow (shows all images once):**
+   - Create a slideshow with Ken Burns effects:
+     ```bash
+     uv run main.py --slideshow "./my_images" --audio "music.mp3" --duration-per-image 3
+     ```
+   - Supports: JPG, JPEG, PNG, BMP, HEIC
+
+6. **Images to Video (loops to match audio):**
+   - Create a video that loops images to fill the entire audio duration:
+     ```bash
+     uv run main.py --images-to-video "./my_images" --audio "music.mp3" --duration-per-image 3
+     ```
+   - Supports: JPG, JPEG, PNG, BMP, HEIC
+
+7. **Google Drive Upload Setup:**
    - To use the upload feature, you need a `client_secrets.json` file in this folder.
    - Download "OAuth 2.0 Client IDs" (Desktop App) JSON from [Google Cloud Console](https://console.cloud.google.com/).
    - Rename it to `client_secrets.json`.
